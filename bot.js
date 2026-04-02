@@ -6,6 +6,7 @@ const { handleSignal } = require('./src/commands/signal');
 const { handlePortfolio } = require('./src/commands/portfolio');
 const { handlePaper } = require('./src/commands/paper');
 const { handleCallback } = require('./src/commands/callback');
+const { handleHistory } = require('./src/commands/history');
 
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
@@ -37,6 +38,7 @@ else if (cmd === '/risk') await handleRisk(chatId, parts);
 else if (cmd === '/signal') await handleSignal(chatId, parts);
 else if (cmd === '/portfolio') await handlePortfolio(chatId);
 else if (cmd === '/paper') await handlePaper(chatId, parts);
+else if (cmd === '/history') await handleHistory(chatId);
 else await handleStart(chatId);
 }
 } catch {}

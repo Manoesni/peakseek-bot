@@ -1,3 +1,7 @@
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
 const { tg, getOffset, setOffset } = require('./src/telegram');
 const { handleStart } = require('./src/commands/start');
 const { handlePing } = require('./src/commands/ping');
@@ -19,6 +23,51 @@ const idx = raw.indexOf('/');
 const clean = idx >= 0 ? raw.slice(idx) : raw;
 return clean.trim().replace(/\s+/g, ' ');
 }
+
+// ---- static mini app server ----
+const PORT = process.env.PORT || 3000;
+const WEB_ROOT = path.join(__dirname, 'web');
+
+const mime = {
+'.html': 'text/html; charset=utf-8',
+'.css': 'text/css; charset=utf-8',
+'.js': 'application/javascript; charset=utf-8',
+'.json': 'application/json; charset=utf-8',
+'.png': 'image/png',
+'.jpg': 'image/jpeg',
+'.jpeg': 'image/jpeg',
+'.svg': 'image/svg+xml',
+};
+
+const server = http.createServer((req, res) => {
+const urlPath = req.url === '/' ? '/index.html' : req.url;
+const cleanPath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+const filePath = path.join(WEB_ROOT, cleanPath);
+
+if (!filePath.startsWith(WEB_ROOT)) {
+res.writeHead(403); res.end('Forbidden'); return;
+}
+
+fs.readFile(filePath, (err, data) => {
+if (err) {
+if (req.url === '/healthz') {
+res.writeHead(200, { 'Content-Type': 'text/plain' });
+res.end('ok');
+return;
+}
+res.writeHead(404); res.end('Not found'); return;
+}
+const ext = path.extname(filePath).toLowerCase();
+res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
+res.end(data);
+});
+});
+
+server.listen(PORT, () => {
+console.log(`Mini app server listening on ${PORT}`);
+});
+
+// ---- telegram loop ----
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
 console.log('PeakSeek modular bot running...');

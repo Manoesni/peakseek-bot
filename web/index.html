@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PeakSeek</title>
+<link rel="stylesheet" href="./styles.css" />
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="app">
+<header class="top">
+<h1>PeakSeek</h1>
+<span class="badge">Dark Pro</span>
+</header>
+
+<section class="card">
+<h2>Wallet Setup</h2>
+<label>EVM Wallet</label>
+<input id="evm" placeholder="0x..." />
+<label>Solana Wallet</label>
+<input id="sol" placeholder="SoL..." />
+<p class="hint">Keep gas reserve on each chain.</p>
+</section>
+
+<section class="card">
+<h2>Mode</h2>
+<div class="row">
+<button class="chip" data-mode="manual">Manual</button>
+<button class="chip" data-mode="semi">Semi</button>
+<button class="chip danger" data-mode="full">Full</button>
+</div>
+<p id="modeText" class="hint">Selected: manual</p>
+</section>
+
+<section class="card">
+<h2>Chain Budgets ($)</h2>
+<div class="grid">
+<label>ETH <input id="b_eth" type="number" min="0" value="0" /></label>
+<label>BASE <input id="b_base" type="number" min="0" value="0" /></label>
+<label>BNB <input id="b_bnb" type="number" min="0" value="0" /></label>
+<label>ARB <input id="b_arb" type="number" min="0" value="0" /></label>
+<label>SOL <input id="b_sol" type="number" min="0" value="0" /></label>
+</div>
+</section>
+
+<section class="card">
+<h2>Actions</h2>
+<div class="row">
+<button id="saveBtn" class="primary">Save Setup</button>
+<button id="signalBtn">Open Signals</button>
+</div>
+<p id="status" class="hint">Ready.</p>
+</section>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>

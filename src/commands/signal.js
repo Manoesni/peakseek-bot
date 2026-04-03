@@ -1,20 +1,14 @@
 const { reply, replySignalCard } = require('../telegram');
 const { getCandles } = require('../hyperliquid');
-const { portfolio, risk } = require('../state');
+const { portfolio, risk, settings } = require('../state');
+const { runner } = require('../runner');
 const { fmt, computeSignal, sizingFromRisk } = require('../indicators');
+const { openPaperPosition } = require('./paper');
 
 function recommendationFromSignal(sig) {
 if (!sig || sig.side === 'NEUTRAL') return { action: 'SKIP', reason: 'No trend alignment' };
-
-// confidence gate
-if (sig.confidence < 58) {
-return { action: 'SKIP', reason: `Low confidence (${fmt(sig.confidence, 0)})` };
-}
-
-return {
-action: sig.side === 'LONG' ? 'LONG' : 'SHORT',
-reason: `Trend aligned, confidence ${fmt(sig.confidence, 0)}`
-};
+if (sig.confidence < 58) return { action: 'SKIP', reason: `Low confidence (${fmt(sig.confidence, 0)})` };
+return { action: sig.side === 'LONG' ? 'LONG' : 'SHORT', reason: `Trend aligned, confidence ${fmt(sig.confidence, 0)}` };
 }
 
 async function handleSignal(chatId, parts) {
@@ -68,6 +62,16 @@ Notional: ${fmt(sz.notional)}
 Margin@5x: ${fmt(sz.margin)}`,
 symbol
 );
+
+// Semi-auto paper execution (only when explicitly enabled)
+if (settings.mode === 'semi' && runner.enabled) {
+const side = rec.action === 'LONG' ? 'long' : 'short';
+const margin = Math.min(Math.max(5, sz.margin), runner.maxAutoMarginPerTrade);
+const opened = await openPaperPosition(chatId, side, symbol, 5, margin, { stop: sig.stop, tp1: sig.tp1 });
+if (opened) {
+await reply(chatId, `🤖 Semi-auto entered ${side.toUpperCase()} ${symbol} with $${fmt(margin)} margin.`);
+}
+}
 }
 
 module.exports = { handleSignal };

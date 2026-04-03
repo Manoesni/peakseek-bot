@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const { tg, getOffset, setOffset } = require('./src/telegram');
+const { tg, getOffset, setOffset, reply } = require('./src/telegram');
 const { handleStart } = require('./src/commands/start');
 const { handlePing } = require('./src/commands/ping');
 const { handleRisk } = require('./src/commands/risk');
@@ -17,6 +17,8 @@ const { handleMode } = require('./src/commands/mode');
 const { handleChains } = require('./src/commands/chains');
 const { handleTrial } = require('./src/commands/trial');
 const { handleOpen } = require('./src/commands/open');
+const { handleSemi } = require('./src/commands/semi');
+const { startSemiLoop } = require('./src/runner');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -24,7 +26,7 @@ const clean = idx >= 0 ? raw.slice(idx) : raw;
 return clean.trim().replace(/\s+/g, ' ');
 }
 
-// ---- static mini app server ----
+// static mini app server
 const PORT = process.env.PORT || 3000;
 const WEB_ROOT = path.join(__dirname, 'web');
 
@@ -67,7 +69,10 @@ server.listen(PORT, () => {
 console.log(`Mini app server listening on ${PORT}`);
 });
 
-// ---- telegram loop ----
+// start semi loop
+startSemiLoop(null, reply);
+
+// telegram loop
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
 console.log('PeakSeek modular bot running...');
@@ -106,6 +111,7 @@ else if (cmd === '/wallet') await handleWallet(chatId, parts);
 else if (cmd === '/mode') await handleMode(chatId, parts);
 else if (cmd === '/chains') await handleChains(chatId, parts);
 else if (cmd === '/trial') await handleTrial(chatId, parts);
+else if (cmd === '/semi') await handleSemi(chatId, parts);
 else await handleStart(chatId);
 }
 } catch {}

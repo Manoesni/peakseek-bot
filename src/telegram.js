@@ -7,9 +7,9 @@ return JSON.stringify({
 keyboard: [
 [{ text: '🚀 /open' }, { text: '📊 /top dex' }, { text: '🆕 /top cex' }],
 [{ text: '📌 /signal BTC' }, { text: '📌 /signal ETH' }, { text: '📌 /signal SOL' }],
-[{ text: '👛 /wallet' }, { text: '⚙️ /mode' }, { text: '🧱 /chains' }],
+[{ text: '👛 /wallet' }, { text: '⚙️ /mode' }, { text: '🤖 /semi status' }, { text: '🧱 /chains' }],
 [{ text: '🛡 /risk' }, { text: '📂 /portfolio' }, { text: '📜 /history' }, { text: '🧪 /trial report' }],
-[{ text: '🏁 /trial start' }, { text: '🛑 /trial stop' }],
+[{ text: '🏁 /trial start' }, { text: '🛑 /trial stop' }, { text: '▶️ /semi on' }, { text: '⏸ /semi off' }],
 [{ text: '🚀 /start' }, { text: '🏓 /ping' }]
 ],
 resize_keyboard: true

@@ -3,49 +3,52 @@ const { getMids } = require('../hyperliquid');
 const { portfolio, risk, trial, getNextPosId } = require('../state');
 const { fmt } = require('../indicators');
 
-async function openPaperPosition(chatId, side, symbol, lev, margin) {
+async function openPaperPosition(chatId, side, symbol, lev, margin, plan = null) {
 const existing = portfolio.positions.find(p => p.symbol === symbol);
 if (existing) {
 await reply(chatId, `⚠️ ${symbol} already open (#${existing.id}, ${existing.side.toUpperCase()}).\nClose first: /paper close ${symbol}`);
-return;
+return false;
 }
 
 if (portfolio.positions.length >= risk.maxOpen) {
 await reply(chatId, `Risk block: max open positions is ${risk.maxOpen}`);
-return;
+return false;
 }
 
 if (margin > portfolio.balance) {
 await reply(chatId, `Not enough balance. Available: $${fmt(portfolio.balance)}`);
-return;
+return false;
 }
-
 const mids = await getMids();
 const entry = Number(mids?.[symbol]);
 if (!Number.isFinite(entry)) {
 await reply(chatId, `No Hyperliquid price for ${symbol}`);
-return;
+return false;
 }
 
 portfolio.balance -= margin;
 portfolio.positions.push({
 id: getNextPosId(),
+chatId,
 symbol,
 side,
 lev,
 margin,
 entry,
+stop: plan?.stop ?? null,
+tp1: plan?.tp1 ?? null,
 openedAt: Date.now()
 });
 
 await reply(chatId, `✅ PAPER ${side.toUpperCase()} ${symbol}\nLev: ${lev}x Margin: $${fmt(margin)} Entry: $${fmt(entry)}`);
+return true;
 }
 
 async function closePaperPosition(chatId, symbol) {
 const idx = portfolio.positions.findIndex(p => p.symbol === symbol);
 if (idx === -1) {
-await reply(chatId, `No open paper position for ${symbol}`);
-return;
+if (chatId) await reply(chatId, `No open paper position for ${symbol}`);
+return false;
 }
 
 const pos = portfolio.positions[idx];
@@ -72,7 +75,6 @@ closedAt: Date.now()
 portfolio.closed.unshift(closedTrade);
 if (portfolio.closed.length > 200) portfolio.closed.length = 200;
 
-// trial stats update
 if (trial.active) {
 trial.trades += 1;
 trial.totalPnl += pnl;
@@ -80,7 +82,8 @@ if (pnl >= 0) trial.wins += 1;
 else trial.losses += 1;
 }
 
-await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}`);
+if (chatId) await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}`);
+return true;
 }
 
 async function handlePaper(chatId, parts) {

@@ -19,6 +19,7 @@ if (margin > portfolio.balance) {
 await reply(chatId, `Not enough balance. Available: $${fmt(portfolio.balance)}`);
 return false;
 }
+
 const mids = await getMids();
 const entry = Number(mids?.[symbol]);
 if (!Number.isFinite(entry)) {
@@ -65,21 +66,20 @@ pnl = pos.margin * pos.lev * signed;
 portfolio.balance += pos.margin + pnl;
 portfolio.positions.splice(idx, 1);
 
-const closedTrade = {
-...pos,
-exit: Number.isFinite(now) ? now : null,
-pnl,
-closedAt: Date.now()
-};
-
+const closedTrade = { ...pos, exit: Number.isFinite(now) ? now : null, pnl, closedAt: Date.now() };
 portfolio.closed.unshift(closedTrade);
-if (portfolio.closed.length > 200) portfolio.closed.length = 200;
+if (portfolio.closed.length > 500) portfolio.closed.length = 500;
 
 if (trial.active) {
 trial.trades += 1;
 trial.totalPnl += pnl;
-if (pnl >= 0) trial.wins += 1;
-else trial.losses += 1;
+if (pnl >= 0) {
+trial.wins += 1;
+trial.grossWin += pnl;
+} else {
+trial.losses += 1;
+trial.grossLossAbs += Math.abs(pnl);
+}
 }
 
 if (chatId) await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}`);
@@ -93,7 +93,6 @@ return;
 }
 
 const action = (parts[1] || '').toLowerCase();
-
 if (action === 'close') {
 const symbol = (parts[2] || '').toUpperCase();
 await closePaperPosition(chatId, symbol);

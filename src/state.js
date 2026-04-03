@@ -8,7 +8,11 @@ maxOpen: 2
 const settings = {
 mode: 'manual', // manual | semi | full
 wallets: { evm: null, sol: null },
-budgets: { ETH: 0, BASE: 0, BNB: 0, ARB: 0, SOL: 0 }
+budgets: { ETH: 0, BASE: 0, BNB: 0, ARB: 0, SOL: 0 },
+filters: {
+minConfidence: 60,
+minTrendPct: 0.2 // abs((sma20-sma50)/sma50)*100
+}
 };
 
 const portfolio = {
@@ -24,7 +28,9 @@ startBalance: 1000,
 trades: 0,
 wins: 0,
 losses: 0,
-totalPnl: 0
+totalPnl: 0,
+grossWin: 0,
+grossLossAbs: 0
 };
 
 let nextPosId = 1;

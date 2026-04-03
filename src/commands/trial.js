@@ -3,10 +3,6 @@ const { trial, portfolio } = require('../state');
 const { fmt } = require('../indicators');
 
 async function handleTrial(chatId, parts) {
-// /trial
-// /trial start
-// /trial stop
-// /trial report
 const sub = (parts[1] || 'report').toLowerCase();
 
 if (sub === 'start') {
@@ -17,6 +13,8 @@ trial.trades = 0;
 trial.wins = 0;
 trial.losses = 0;
 trial.totalPnl = 0;
+trial.grossWin = 0;
+trial.grossLossAbs = 0;
 await reply(chatId, `🧪 Trial started\nStart balance: $${fmt(trial.startBalance)}`);
 return;
 }
@@ -27,9 +25,11 @@ await reply(chatId, '🧪 Trial stopped.');
 return;
 }
 
-// report/default
 const winRate = trial.trades > 0 ? (trial.wins / trial.trades) * 100 : 0;
 const avgPnl = trial.trades > 0 ? trial.totalPnl / trial.trades : 0;
+const avgWin = trial.wins > 0 ? trial.grossWin / trial.wins : 0;
+const avgLoss = trial.losses > 0 ? trial.grossLossAbs / trial.losses : 0;
+const pf = trial.grossLossAbs > 0 ? trial.grossWin / trial.grossLossAbs : (trial.grossWin > 0 ? 99 : 0);
 const deltaBal = portfolio.balance - trial.startBalance;
 
 await reply(
@@ -41,6 +41,9 @@ Wins/Losses: ${trial.wins}/${trial.losses}
 Win rate: ${fmt(winRate)}%
 Total PnL: $${fmt(trial.totalPnl)}
 Avg PnL/trade: $${fmt(avgPnl)}
+Avg Win: $${fmt(avgWin)}
+Avg Loss: $${fmt(avgLoss)}
+Profit Factor: ${fmt(pf)}
 Balance Δ: $${fmt(deltaBal)}
 Current balance: $${fmt(portfolio.balance)}`
 );

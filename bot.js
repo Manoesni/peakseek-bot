@@ -12,6 +12,13 @@ const { handleWallet } = require('./src/commands/wallet');
 const { handleMode } = require('./src/commands/mode');
 const { handleChains } = require('./src/commands/chains');
 
+function normalizeCommandText(raw = '') {
+// remove leading emoji/text before first slash
+const idx = raw.indexOf('/');
+const clean = idx >= 0 ? raw.slice(idx) : raw;
+return clean.trim().replace(/\s+/g, ' ');
+}
+
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
 console.log('PeakSeek modular bot running...');
@@ -33,7 +40,8 @@ const msg = it.message;
 if (!msg || !msg.text) continue;
 
 const chatId = msg.chat.id;
-const parts = msg.text.trim().split(/\s+/);
+const normalized = normalizeCommandText(msg.text);
+const parts = normalized.split(/\s+/);
 const cmd = (parts[0] || '').toLowerCase();
 
 if (cmd === '/start') await handleStart(chatId);

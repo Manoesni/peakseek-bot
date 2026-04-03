@@ -12,6 +12,7 @@ const { handleWallet } = require('./src/commands/wallet');
 const { handleMode } = require('./src/commands/mode');
 const { handleChains } = require('./src/commands/chains');
 const { handleTrial } = require('./src/commands/trial');
+const { handleOpen } = require('./src/commands/open');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -44,6 +45,7 @@ const parts = normalized.split(/\s+/);
 const cmd = (parts[0] || '').toLowerCase();
 
 if (cmd === '/start') await handleStart(chatId);
+else if (cmd === '/open') await handleOpen(chatId);
 else if (cmd === '/ping') await handlePing(chatId);
 else if (cmd === '/risk') await handleRisk(chatId, parts);
 else if (cmd === '/signal') await handleSignal(chatId, parts);

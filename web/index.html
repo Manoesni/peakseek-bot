@@ -11,15 +11,26 @@
 <div class="app">
 <header class="top">
 <h1>PeakSeek</h1>
-<span class="badge">Dark Pro</span>
+<span class="badge">v0.2.0 App-First</span>
 </header>
 
 <section class="card">
-<h2>Status</h2>
+<h2>Live Status</h2>
 <div id="statusPanel" class="mono">Loading...</div>
 <div class="row">
 <button id="refreshBtn">Refresh</button>
+<button id="semiOnBtn">Semi ON</button>
+<button id="semiOffBtn" class="danger">Semi OFF</button>
 </div>
+</section>
+
+<section class="card">
+<h2>Trial Controls</h2>
+<div class="row">
+<button id="trialStartBtn">Start Trial</button>
+<button id="trialStopBtn">Stop Trial</button>
+</div>
+<p class="hint">Use trial mode to validate strategy before real money.</p>
 </section>
 
 <section class="card">
@@ -28,21 +39,17 @@
 <input id="evm" placeholder="0x..." />
 <label>Solana Wallet</label>
 <input id="sol" placeholder="SoL..." />
-<p class="hint">Keep gas reserve on each chain.</p>
 </section>
 
 <section class="card">
-<h2>Mode</h2>
+<h2>Mode & Budgets</h2>
 <div class="row">
 <button class="chip" data-mode="manual">Manual</button>
 <button class="chip" data-mode="semi">Semi</button>
 <button class="chip danger" data-mode="full">Full</button>
 </div>
 <p id="modeText" class="hint">Selected: manual</p>
-</section>
 
-<section class="card">
-<h2>Chain Budgets ($)</h2>
 <div class="grid">
 <label>ETH <input id="b_eth" type="number" min="0" value="0" /></label>
 <label>BASE <input id="b_base" type="number" min="0" value="0" /></label>
@@ -50,18 +57,9 @@
 <label>ARB <input id="b_arb" type="number" min="0" value="0" /></label>
 <label>SOL <input id="b_sol" type="number" min="0" value="0" /></label>
 </div>
-</section>
 
-<section class="card">
-<h2>Controls</h2>
 <div class="row">
-<button id="saveBtn" class="primary">Save Setup</button>
-<button id="semiOnBtn">Semi ON</button>
-<button id="semiOffBtn">Semi OFF</button>
-</div>
-<div class="row">
-<button id="trialStartBtn">Trial Start</button>
-<button id="trialStopBtn">Trial Stop</button>
+<button id="saveBtn" class="primary">Save All</button>
 </div>
 <p id="status" class="hint">Ready.</p>
 </section>

@@ -31,6 +31,7 @@ SOL: Number(document.getElementById("b_sol").value || 0),
 }
 };
 }
+
 async function api(path, method = "GET", body) {
 const res = await fetch(path, {
 method,
@@ -57,13 +58,13 @@ renderStatus(s);
 panel.textContent = 'Status unavailable';
 }
 }
+
 document.getElementById("refreshBtn").addEventListener("click", refreshStatus);
 
 document.getElementById("saveBtn").addEventListener("click", async () => {
 try {
-const p = payload();
-const r = await api('/api/setup', 'POST', p);
-statusEl.textContent = r.ok ? 'Setup saved.' : 'Save failed.';
+const r = await api('/api/setup', 'POST', payload());
+statusEl.textContent = r.ok ? 'Saved.' : 'Save failed.';
 await refreshStatus();
 } catch {
 statusEl.textContent = 'Save failed.';

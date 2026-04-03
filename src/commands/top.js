@@ -1,9 +1,9 @@
 const { reply } = require('../telegram');
 const { getCandles } = require('../hyperliquid');
 const { computeSignal, fmt } = require('../indicators');
+const { handleTopCex } = require('./topcex');
 
 const DEFAULT_SCAN = ['BTC', 'ETH', 'SOL', 'ARB', 'BNB', 'DOGE', 'XRP', 'ADA'];
-
 async function scanOne(symbol) {
 try {
 const candles = await getCandles(symbol);
@@ -16,7 +16,7 @@ return null;
 }
 }
 
-async function handleTop(chatId) {
+async function handleTopDex(chatId) {
 const results = [];
 
 for (const s of DEFAULT_SCAN) {
@@ -25,19 +25,35 @@ if (r && r.side !== 'NEUTRAL') results.push(r);
 }
 
 if (!results.length) {
-await reply(chatId, '📊 /top: No strong LONG/SHORT setups right now.');
+await reply(chatId, '📊 /top dex: No strong LONG/SHORT setups right now.');
 return;
 }
 
 results.sort((a, b) => b.confidence - a.confidence);
 const top = results.slice(0, 5);
 
-let txt = '🔥 Top Signals (v0.1.3)\n';
+let txt = '🔥 Top DEX Signals (v0.1.4)\n';
 for (const r of top) {
 txt += `\n• ${r.symbol} ${r.side} | conf ${fmt(r.confidence, 0)} | entry $${fmt(r.entry)} | stop $${fmt(r.stop)} | tp1 $${fmt(r.tp1)}`;
 }
 
 await reply(chatId, txt);
+}
+
+async function handleTop(chatId, parts) {
+// /top
+// /top dex
+// /top cex
+if (parts.length === 1) {
+await handleTopDex(chatId);
+return;
+}
+
+const sub = (parts[1] || '').toLowerCase();
+if (sub === 'dex') return handleTopDex(chatId);
+if (sub === 'cex') return handleTopCex(chatId);
+
+await reply(chatId, 'Usage: /top [dex|cex]');
 }
 
 module.exports = { handleTop };

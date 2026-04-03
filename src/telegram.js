@@ -5,10 +5,11 @@ let offset = 0;
 function replyKeyboard() {
 return JSON.stringify({
 keyboard: [
-[{ text: '/signal BTC' }, { text: '/signal ETH' }, { text: '/signal SOL' }],
-[{ text: '/risk' }, { text: '/portfolio' }],
-[{ text: '/paper long BTC 5 10' }, { text: '/paper close BTC' }],
-[{ text: '/start' }, { text: '/ping' }]
+[{ text: '📊 /top dex' }, { text: '🆕 /top cex' }],
+[{ text: '📌 /signal BTC' }, { text: '📌 /signal ETH' }, { text: '📌 /signal SOL' }],
+[{ text: '👛 /wallet' }, { text: '⚙️ /mode' }, { text: '🧱 /chains' }],
+[{ text: '🛡 /risk' }, { text: '📂 /portfolio' }, { text: '📜 /history' }],
+[{ text: '🚀 /start' }, { text: '🏓 /ping' }]
 ],
 resize_keyboard: true
 });

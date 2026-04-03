@@ -8,6 +8,9 @@ const { handlePortfolio } = require('./src/commands/portfolio');
 const { handlePaper } = require('./src/commands/paper');
 const { handleCallback } = require('./src/commands/callback');
 const { handleHistory } = require('./src/commands/history');
+const { handleWallet } = require('./src/commands/wallet');
+const { handleMode } = require('./src/commands/mode');
+const { handleChains } = require('./src/commands/chains');
 
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
@@ -37,10 +40,13 @@ if (cmd === '/start') await handleStart(chatId);
 else if (cmd === '/ping') await handlePing(chatId);
 else if (cmd === '/risk') await handleRisk(chatId, parts);
 else if (cmd === '/signal') await handleSignal(chatId, parts);
-else if (cmd === '/top') await handleTop(chatId);
+else if (cmd === '/top') await handleTop(chatId, parts);
 else if (cmd === '/portfolio') await handlePortfolio(chatId);
 else if (cmd === '/paper') await handlePaper(chatId, parts);
 else if (cmd === '/history') await handleHistory(chatId);
+else if (cmd === '/wallet') await handleWallet(chatId, parts);
+else if (cmd === '/mode') await handleMode(chatId, parts);
+else if (cmd === '/chains') await handleChains(chatId, parts);
 else await handleStart(chatId);
 }
 } catch {}

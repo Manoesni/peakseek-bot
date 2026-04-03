@@ -15,6 +15,14 @@
 </header>
 
 <section class="card">
+<h2>Status</h2>
+<div id="statusPanel" class="mono">Loading...</div>
+<div class="row">
+<button id="refreshBtn">Refresh</button>
+</div>
+</section>
+
+<section class="card">
 <h2>Wallet Setup</h2>
 <label>EVM Wallet</label>
 <input id="evm" placeholder="0x..." />
@@ -45,10 +53,15 @@
 </section>
 
 <section class="card">
-<h2>Actions</h2>
+<h2>Controls</h2>
 <div class="row">
 <button id="saveBtn" class="primary">Save Setup</button>
-<button id="signalBtn">Open Signals</button>
+<button id="semiOnBtn">Semi ON</button>
+<button id="semiOffBtn">Semi OFF</button>
+</div>
+<div class="row">
+<button id="trialStartBtn">Trial Start</button>
+<button id="trialStopBtn">Trial Stop</button>
 </div>
 <p id="status" class="hint">Ready.</p>
 </section>

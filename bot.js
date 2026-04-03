@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 
 const { tg, getOffset, setOffset, reply } = require('./src/telegram');
+const { settings, portfolio, trial } = require('./src/state');
+const { setSemiEnabled, getSemiStatus, startSemiLoop } = require('./src/runner');
+
 const { handleStart } = require('./src/commands/start');
 const { handlePing } = require('./src/commands/ping');
 const { handleRisk } = require('./src/commands/risk');
@@ -18,7 +21,6 @@ const { handleChains } = require('./src/commands/chains');
 const { handleTrial } = require('./src/commands/trial');
 const { handleOpen } = require('./src/commands/open');
 const { handleSemi } = require('./src/commands/semi');
-const { startSemiLoop } = require('./src/runner');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -26,7 +28,6 @@ const clean = idx >= 0 ? raw.slice(idx) : raw;
 return clean.trim().replace(/\s+/g, ' ');
 }
 
-// static mini app server
 const PORT = process.env.PORT || 3000;
 const WEB_ROOT = path.join(__dirname, 'web');
 
@@ -41,7 +42,95 @@ const mime = {
 '.svg': 'image/svg+xml',
 };
 
-const server = http.createServer((req, res) => {
+function sendJson(res, code, obj) {
+res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+res.end(JSON.stringify(obj));
+}
+
+function parseBody(req) {
+return new Promise((resolve) => {
+let data = '';
+req.on('data', c => data += c);
+req.on('end', () => {
+try { resolve(data ? JSON.parse(data) : {}); } catch { resolve({}); }
+});
+});
+}
+const server = http.createServer(async (req, res) => {
+// health
+if (req.url === '/healthz') {
+res.writeHead(200, { 'Content-Type': 'text/plain' });
+res.end('ok');
+return;
+}
+
+// API: status
+if (req.method === 'GET' && req.url === '/api/status') {
+const semi = getSemiStatus();
+return sendJson(res, 200, {
+ok: true,
+mode: settings.mode,
+semiEnabled: semi.enabled,
+balance: portfolio.balance,
+openPositions: portfolio.positions.length,
+trialActive: trial.active,
+trialTrades: trial.trades,
+trialPnl: Number(trial.totalPnl.toFixed(4))
+});
+}
+
+// API: setup save
+if (req.method === 'POST' && req.url === '/api/setup') {
+const body = await parseBody(req);
+const w = body.wallets || {};
+const b = body.budgets || {};
+
+settings.mode = body.mode || settings.mode;
+settings.wallets.evm = w.evm || settings.wallets.evm;
+settings.wallets.sol = w.sol || settings.wallets.sol;
+settings.budgets.ETH = Number(b.ETH || 0);
+settings.budgets.BASE = Number(b.BASE || 0);
+settings.budgets.BNB = Number(b.BNB || 0);
+settings.budgets.ARB = Number(b.ARB || 0);
+settings.budgets.SOL = Number(b.SOL || 0);
+
+return sendJson(res, 200, { ok: true });
+}
+
+// API: semi toggle
+if (req.method === 'POST' && req.url === '/api/semi') {
+const body = await parseBody(req);
+const enabled = !!body.enabled;
+setSemiEnabled(enabled);
+settings.mode = enabled ? 'semi' : (settings.mode === 'semi' ? 'manual' : settings.mode);
+return sendJson(res, 200, { ok: true, enabled });
+}
+
+// API: trial control
+if (req.method === 'POST' && req.url === '/api/trial') {
+const body = await parseBody(req);
+const action = (body.action || '').toLowerCase();
+
+if (action === 'start') {
+trial.active = true;
+trial.startedAt = Date.now();
+trial.startBalance = portfolio.balance;
+trial.trades = 0;
+trial.wins = 0;
+trial.losses = 0;
+trial.totalPnl = 0;
+return sendJson(res, 200, { ok: true, action: 'start' });
+}
+
+if (action === 'stop') {
+trial.active = false;
+return sendJson(res, 200, { ok: true, action: 'stop' });
+}
+
+return sendJson(res, 400, { ok: false, error: 'invalid action' });
+}
+
+// static files
 const urlPath = req.url === '/' ? '/index.html' : req.url;
 const cleanPath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
 const filePath = path.join(WEB_ROOT, cleanPath);
@@ -51,14 +140,7 @@ res.writeHead(403); res.end('Forbidden'); return;
 }
 
 fs.readFile(filePath, (err, data) => {
-if (err) {
-if (req.url === '/healthz') {
-res.writeHead(200, { 'Content-Type': 'text/plain' });
-res.end('ok');
-return;
-}
-res.writeHead(404); res.end('Not found'); return;
-}
+if (err) { res.writeHead(404); res.end('Not found'); return; }
 const ext = path.extname(filePath).toLowerCase();
 res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
 res.end(data);

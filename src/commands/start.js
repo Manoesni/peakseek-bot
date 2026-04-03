@@ -13,7 +13,10 @@ Start workflow:
 3) /risk
 4) /top dex or /signal BTC
 
-Manual / Semi / Full automation controls are now active.`
+Trial mode:
+• /trial start
+• /trial report
+• /trial stop`
 );
 }
 

@@ -7,23 +7,24 @@ maxOpen: 2
 
 const settings = {
 mode: 'manual', // manual | semi | full
-wallets: {
-evm: null,
-sol: null
-},
-budgets: {
-ETH: 0,
-BASE: 0,
-BNB: 0,
-ARB: 0,
-SOL: 0
-}
+wallets: { evm: null, sol: null },
+budgets: { ETH: 0, BASE: 0, BNB: 0, ARB: 0, SOL: 0 }
 };
 
 const portfolio = {
 balance: 1000,
-positions: [], // open positions
-closed: [] // closed trades history
+positions: [],
+closed: []
+};
+
+const trial = {
+active: false,
+startedAt: null,
+startBalance: 1000,
+trades: 0,
+wins: 0,
+losses: 0,
+totalPnl: 0
 };
 
 let nextPosId = 1;
@@ -38,4 +39,4 @@ function getNextPosId() {
 return nextPosId++;
 }
 
-module.exports = { risk, settings, portfolio, RISK_PRESETS, getNextPosId };
+module.exports = { risk, settings, portfolio, trial, RISK_PRESETS, getNextPosId };

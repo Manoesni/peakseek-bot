@@ -7,6 +7,7 @@ const { settings, portfolio, trial } = require('./src/state');
 const { setSemiEnabled, getSemiStatus, startSemiLoop } = require('./src/runner');
 
 const { handleStart } = require('./src/commands/start');
+const { handleHelp } = require('./src/commands/help');
 const { handlePing } = require('./src/commands/ping');
 const { handleRisk } = require('./src/commands/risk');
 const { handleSignal } = require('./src/commands/signal');
@@ -21,6 +22,9 @@ const { handleChains } = require('./src/commands/chains');
 const { handleTrial } = require('./src/commands/trial');
 const { handleOpen } = require('./src/commands/open');
 const { handleSemi } = require('./src/commands/semi');
+const { handleBitget } = require('./src/commands/bitget');
+const { handleDexscan } = require('./src/commands/dexscan');
+const { handleDexpick } = require('./src/commands/dexpick');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -57,14 +61,12 @@ try { resolve(data ? JSON.parse(data) : {}); } catch { resolve({}); }
 });
 }
 const server = http.createServer(async (req, res) => {
-// health
 if (req.url === '/healthz') {
 res.writeHead(200, { 'Content-Type': 'text/plain' });
 res.end('ok');
 return;
 }
 
-// API: status
 if (req.method === 'GET' && req.url === '/api/status') {
 const semi = getSemiStatus();
 return sendJson(res, 200, {
@@ -79,7 +81,6 @@ trialPnl: Number(trial.totalPnl.toFixed(4))
 });
 }
 
-// API: setup save
 if (req.method === 'POST' && req.url === '/api/setup') {
 const body = await parseBody(req);
 const w = body.wallets || {};
@@ -97,7 +98,6 @@ settings.budgets.SOL = Number(b.SOL || 0);
 return sendJson(res, 200, { ok: true });
 }
 
-// API: semi toggle
 if (req.method === 'POST' && req.url === '/api/semi') {
 const body = await parseBody(req);
 const enabled = !!body.enabled;
@@ -106,7 +106,6 @@ settings.mode = enabled ? 'semi' : (settings.mode === 'semi' ? 'manual' : settin
 return sendJson(res, 200, { ok: true, enabled });
 }
 
-// API: trial control
 if (req.method === 'POST' && req.url === '/api/trial') {
 const body = await parseBody(req);
 const action = (body.action || '').toLowerCase();
@@ -119,6 +118,8 @@ trial.trades = 0;
 trial.wins = 0;
 trial.losses = 0;
 trial.totalPnl = 0;
+trial.grossWin = 0;
+trial.grossLossAbs = 0;
 return sendJson(res, 200, { ok: true, action: 'start' });
 }
 
@@ -130,7 +131,6 @@ return sendJson(res, 200, { ok: true, action: 'stop' });
 return sendJson(res, 400, { ok: false, error: 'invalid action' });
 }
 
-// static files
 const urlPath = req.url === '/' ? '/index.html' : req.url;
 const cleanPath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
 const filePath = path.join(WEB_ROOT, cleanPath);
@@ -151,10 +151,7 @@ server.listen(PORT, () => {
 console.log(`Mini app server listening on ${PORT}`);
 });
 
-// start semi loop
 startSemiLoop(null, reply);
-
-// telegram loop
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
 console.log('PeakSeek modular bot running...');
@@ -182,6 +179,7 @@ const cmd = (parts[0] || '').toLowerCase();
 
 if (cmd === '/start') await handleStart(chatId);
 else if (cmd === '/open') await handleOpen(chatId);
+else if (cmd === '/help') await handleHelp(chatId);
 else if (cmd === '/ping') await handlePing(chatId);
 else if (cmd === '/risk') await handleRisk(chatId, parts);
 else if (cmd === '/signal') await handleSignal(chatId, parts);
@@ -194,6 +192,9 @@ else if (cmd === '/mode') await handleMode(chatId, parts);
 else if (cmd === '/chains') await handleChains(chatId, parts);
 else if (cmd === '/trial') await handleTrial(chatId, parts);
 else if (cmd === '/semi') await handleSemi(chatId, parts);
+else if (cmd === '/bitget') await handleBitget(chatId, parts);
+else if (cmd === '/dexscan') await handleDexscan(chatId, parts);
+else if (cmd === '/dexpick') await handleDexpick(chatId, parts);
 else await handleStart(chatId);
 }
 } catch {}

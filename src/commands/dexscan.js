@@ -1,22 +1,55 @@
 const { reply } = require('../telegram');
 
-// v0.2.2 skeleton (safe placeholder list for now)
-// Next step: plug real APIs (DexScreener/GeckoTerminal/Birdeye etc.)
-async function handleDexscan(chatId) {
-const sample = [
-{ token: 'WIF', chain: 'SOL', score: 72, note: 'Momentum candidate' },
-{ token: 'PEPE', chain: 'ETH', score: 68, note: 'High volatility' },
-{ token: 'BONK', chain: 'SOL', score: 65, note: 'Watch liquidity' },
-{ token: 'FLOKI', chain: 'BNB', score: 61, note: 'Trend continuation watch' },
-{ token: 'AERO', chain: 'BASE', score: 59, note: 'Borderline setup' }
-];
-
-let txt = '🧪 DEX Scan (Skeleton)\nTop watchlist for paper testing:\n';
-for (const r of sample) {
-txt += `\n• ${r.token} (${r.chain}) | score ${r.score} | ${r.note}`;
+async function fetchDexscreenerBoosts() {
+// lightweight public endpoint
+const r = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
+if (!r.ok) throw new Error('dexscreener fetch failed');
+const data = await r.json();
+return Array.isArray(data) ? data : [];
 }
-txt += '\n\nUse /signal <TOKEN> for current engine check.\nNext patch: real live DEX source integration.';
+
+function fmtRow(x) {
+const token = x?.tokenSymbol || x?.symbol || 'UNK';
+const chain = x?.chainId || x?.chain || 'n/a';
+const score = x?.amount ? Math.min(99, Math.round(Number(x.amount))) : 60;
+return { token: String(token).toUpperCase(), chain: String(chain).toUpperCase(), score };
+}
+
+async function handleDexscan(chatId, parts = []) {
+const sub = (parts[1] || '').toLowerCase();
+
+// /dexscan live
+if (sub === 'live') {
+try {
+const rows = await fetchDexscreenerBoosts();
+const top = rows.slice(0, 8).map(fmtRow);
+
+if (!top.length) {
+await reply(chatId, '🧪 DEX Scan Live\nNo boosted tokens found right now.');
+return;
+}
+
+let txt = '🧪 DEX Scan Live (DexScreener boosts)\n';
+for (const r of top) {
+txt += `\n• ${r.token} (${r.chain}) | heat ${r.score}`;
+}
+txt += '\n\nNext step:\n• /dexpick <TOKEN> <amount>\nExample: /dexpick WIF 15';
 await reply(chatId, txt);
+return;
+} catch (e) {
+await reply(chatId, 'DEX live scan failed right now. Try again in a minute.');
+return;
+}
+}
+
+// default skeleton
+await reply(
+chatId,
+`🧪 DEX Scan
+Use:
+• /dexscan live (fetch live boosted tokens)
+• /dexpick <TOKEN> <amount> (paper entry helper)`
+);
 }
 
 module.exports = { handleDexscan };

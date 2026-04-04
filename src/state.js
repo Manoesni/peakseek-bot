@@ -2,7 +2,9 @@ const risk = {
 tier: 'safe',
 riskPct: 0.5,
 dailyMaxLossPct: 2.0,
-maxOpen: 2
+maxOpen: 2,
+dexStopPct: 12, // default DEX stop loss %
+dexTpPct: 25 // default DEX target %
 };
 
 const settings = {
@@ -11,7 +13,7 @@ wallets: { evm: null, sol: null },
 budgets: { ETH: 0, BASE: 0, BNB: 0, ARB: 0, SOL: 0 },
 filters: {
 minConfidence: 55,
-minTrendPct: 0.01 // abs((sma20-sma50)/sma50)*100
+minTrendPct: 0.01
 }
 };
 

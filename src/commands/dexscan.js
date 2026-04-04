@@ -1,76 +1,37 @@
 const { reply } = require('../telegram');
 
-async function fetchDexscreenerBoosts() {
-const r = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
-if (!r.ok) throw new Error('dexscreener fetch failed');
-const data = await r.json();
-return Array.isArray(data) ? data : [];
-}
-
-function pickSymbol(x) {
-const candidates = [
-x?.tokenSymbol,
-x?.symbol,
-x?.baseToken?.symbol,
-x?.quoteToken?.symbol,
-x?.token?.symbol,
-x?.ticker
-].filter(Boolean);
-
-let s = candidates[0] || 'UNK';
-s = String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
-if (!s || s.length < 2 || s.length > 12) return 'UNK';
-return s;
-}
-
-function pickChain(x) {
-const c = x?.chainId || x?.chain || x?.network || 'n/a';
-return String(c).toUpperCase();
-}
-
 function num(v, d = 0) {
 const n = Number(v);
 return Number.isFinite(n) ? n : d;
 }
 
-function scoreRow(x) {
-// Heuristic score from available fields
-const amount = num(x?.amount, 0); // boost amount
-const totalAmount = num(x?.totalAmount, 0); // if exists
-const liquidity = num(x?.liquidityUsd, 0); // if exists
-const vol24 = num(x?.volume24h, 0); // if exists
-
-// weighted compact score
-let score = 0;
-score += Math.min(40, amount / 25);
-score += Math.min(20, totalAmount / 100);
-score += Math.min(20, liquidity / 50000);
-score += Math.min(20, vol24 / 100000);
-
-// baseline for rows with any signal
-if (score === 0 && amount > 0) score = 55;
-return Math.max(1, Math.min(99, Math.round(score)));
+function cleanSymbol(s) {
+s = String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+if (!s || s.length < 2 || s.length > 12) return null;
+return s;
 }
 
-function normalizeRow(x) {
-const token = pickSymbol(x);
-const chain = pickChain(x);
-const score = scoreRow(x);
-const liquidityUsd = num(x?.liquidityUsd, 0);
-const volume24h = num(x?.volume24h, 0);
-return { token, chain, score, liquidityUsd, volume24h };
+function normPair(p) {
+const base = cleanSymbol(p?.baseToken?.symbol || p?.base?.symbol || p?.symbol);
+const chain = String(p?.chainId || p?.chain || 'n/a').toUpperCase();
+const liq = num(p?.liquidity?.usd || p?.liquidityUsd, 0);
+const vol = num(p?.volume?.h24 || p?.volume24h, 0);
+const change = num(p?.priceChange?.h24 || p?.priceChange24h, 0);
+
+if (!base) return null;
+const score = Math.max(1, Math.min(99, Math.round(
+Math.min(35, liq / 50000) +
+Math.min(35, vol / 100000) +
+Math.min(20, Math.abs(change) / 2) +
+10
+)));
+
+return { token: base, chain, liq, vol, change, score };
 }
 
-function isUsable(r) {
-if (!r) return false;
-if (r.token === 'UNK') return false;
-if (r.chain === 'N/A') return false;
-return true;
-}
-
-function uniqByTokenChain(rows) {
-const seen = new Set();
+function dedup(rows) {
 const out = [];
+const seen = new Set();
 for (const r of rows) {
 const k = `${r.token}|${r.chain}`;
 if (seen.has(k)) continue;
@@ -81,10 +42,35 @@ return out;
 }
 
 function fmtUsd(n) {
-if (!Number.isFinite(n) || n <= 0) return 'n/a';
+if (!n) return 'n/a';
 if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}m`;
 if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
 return `$${n.toFixed(0)}`;
+}
+
+async function fetchBoosts() {
+const r = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
+if (!r.ok) return [];
+const j = await r.json();
+if (!Array.isArray(j)) return [];
+return j.map(x => ({
+token: cleanSymbol(x?.tokenSymbol || x?.symbol),
+chain: String(x?.chainId || x?.chain || 'n/a').toUpperCase(),
+liq: 0,
+vol: 0,
+change: 0,
+score: Math.max(55, Math.min(95, Math.round(num(x?.amount, 60))))
+})).filter(x => x.token);
+}
+
+async function fetchSolanaPairsFallback() {
+// fallback: stable response format in practice
+const url = 'https://api.dexscreener.com/latest/dex/search/?q=SOL/USDC';
+const r = await fetch(url);
+if (!r.ok) return [];
+const j = await r.json();
+const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
+return pairs.map(normPair).filter(Boolean);
 }
 
 async function handleDexscan(chatId, parts = []) {
@@ -92,30 +78,30 @@ const sub = (parts[1] || '').toLowerCase();
 
 if (sub === 'live') {
 try {
-const raw = await fetchDexscreenerBoosts();
+let rows = await fetchBoosts();
 
-const rows = raw
-.map(normalizeRow)
-.filter(isUsable);
+// fallback if boosts are poor/unknown
+if (rows.length < 3) {
+const fb = await fetchSolanaPairsFallback();
+rows = fb;
+}
 
-const dedup = uniqByTokenChain(rows)
-.sort((a, b) => b.score - a.score)
-.slice(0, 10);
+rows = dedup(rows).sort((a, b) => b.score - a.score).slice(0, 10);
 
-if (!dedup.length) {
-await reply(chatId, '🧪 DEX Scan Live\nNo usable boosted tokens found right now.');
+if (!rows.length) {
+await reply(chatId, '🧪 DEX Scan Live\nNo tokens found right now. Try again in 1–2 min.');
 return;
 }
 
-let txt = '🧪 DEX Scan Live (quality filtered)\n';
-for (const r of dedup) {
-txt += `\n• ${r.token} (${r.chain}) | score ${r.score} | liq ${fmtUsd(r.liquidityUsd)} | vol24 ${fmtUsd(r.volume24h)}`;
+let txt = '🧪 DEX Scan Live\n';
+for (const r of rows) {
+txt += `\n• ${r.token} (${r.chain}) | score ${r.score} | liq ${fmtUsd(r.liq)} | vol24 ${fmtUsd(r.vol)}`;
 }
 txt += '\n\nPaper test:\n• /dexpick <TOKEN> <amount>\nExample: /dexpick WIF 15';
 await reply(chatId, txt);
 return;
 } catch {
-await reply(chatId, 'DEX live scan failed right now. Try again in a minute.');
+await reply(chatId, 'DEX live scan failed right now. Try again in 1–2 minutes.');
 return;
 }
 }
@@ -124,7 +110,7 @@ await reply(
 chatId,
 `🧪 DEX Scan
 Use:
-• /dexscan live (quality-filtered live scan)
+• /dexscan live
 • /dexpick <TOKEN> <amount> (paper entry helper)`
 );
 }

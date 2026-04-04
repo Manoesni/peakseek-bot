@@ -1,7 +1,7 @@
 const { reply } = require('../telegram');
-const { getMids } = require('../hyperliquid');
 const { portfolio, risk, trial, getNextPosId } = require('../state');
 const { fmt } = require('../indicators');
+const { getBestPrice } = require('../prices');
 
 async function openPaperPosition(chatId, side, symbol, lev, margin, plan = null) {
 const existing = portfolio.positions.find(p => p.symbol === symbol);
@@ -20,10 +20,9 @@ await reply(chatId, `Not enough balance. Available: $${fmt(portfolio.balance)}`)
 return false;
 }
 
-const mids = await getMids();
-const entry = Number(mids?.[symbol]);
-if (!Number.isFinite(entry)) {
-await reply(chatId, `No Hyperliquid price for ${symbol}`);
+const px = await getBestPrice(symbol);
+if (!px || !Number.isFinite(px.price)) {
+await reply(chatId, `No price found for ${symbol} (HL+DEX lookup failed).`);
 return false;
 }
 
@@ -35,13 +34,19 @@ symbol,
 side,
 lev,
 margin,
-entry,
+entry: px.price,
+priceSource: px.source,
+chain: px.chain || null,
+pairAddress: px.pairAddress || null,
 stop: plan?.stop ?? null,
 tp1: plan?.tp1 ?? null,
 openedAt: Date.now()
 });
 
-await reply(chatId, `✅ PAPER ${side.toUpperCase()} ${symbol}\nLev: ${lev}x Margin: $${fmt(margin)} Entry: $${fmt(entry)}`);
+await reply(
+chatId,
+`✅ PAPER ${side.toUpperCase()} ${symbol}\nLev: ${lev}x Margin: $${fmt(margin)} Entry: $${fmt(px.price)}\nSource: ${px.source}${px.chain ? ` (${px.chain})` : ''}`
+);
 return true;
 }
 
@@ -53,23 +58,31 @@ return false;
 }
 
 const pos = portfolio.positions[idx];
-const mids = await getMids();
-const now = Number(mids?.[symbol]);
+const px = await getBestPrice(symbol);
+
+if (!px || !Number.isFinite(px.price)) {
+if (chatId) await reply(chatId, `No live price to close ${symbol} right now. Try again.`);
+return false;
+}
 
 let pnl = 0;
-if (Number.isFinite(now)) {
-const move = (now - pos.entry) / pos.entry;
+const move = (px.price - pos.entry) / pos.entry;
 const signed = pos.side === 'long' ? move : -move;
 pnl = pos.margin * pos.lev * signed;
-}
 
 portfolio.balance += pos.margin + pnl;
 portfolio.positions.splice(idx, 1);
 
-const closedTrade = { ...pos, exit: Number.isFinite(now) ? now : null, pnl, closedAt: Date.now() };
+const closedTrade = {
+...pos,
+exit: px.price,
+exitSource: px.source,
+pnl,
+closedAt: Date.now()
+};
+
 portfolio.closed.unshift(closedTrade);
 if (portfolio.closed.length > 500) portfolio.closed.length = 500;
-
 if (trial.active) {
 trial.trades += 1;
 trial.totalPnl += pnl;
@@ -82,7 +95,7 @@ trial.grossLossAbs += Math.abs(pnl);
 }
 }
 
-if (chatId) await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}`);
+if (chatId) await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}\nExit source: ${px.source}`);
 return true;
 }
 
@@ -93,6 +106,7 @@ return;
 }
 
 const action = (parts[1] || '').toLowerCase();
+
 if (action === 'close') {
 const symbol = (parts[2] || '').toUpperCase();
 await closePaperPosition(chatId, symbol);

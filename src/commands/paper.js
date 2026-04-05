@@ -1,6 +1,6 @@
 const { reply } = require('../telegram');
 const { portfolio, risk, trial, getNextPosId } = require('../state');
-const { fmt } = require('../indicators');
+const { fmt, fmtAdaptive } = require('../indicators');
 const { getBestPrice } = require('../prices');
 
 async function openPaperPosition(chatId, side, symbol, lev, margin, plan = null) {
@@ -40,20 +40,28 @@ chain: px.chain || null,
 pairAddress: px.pairAddress || null,
 stop: plan?.stop ?? null,
 tp1: plan?.tp1 ?? null,
+tp2: plan?.tp2 ?? null,
+trailingArm: plan?.trailingArm ?? null,
+trailingOn: false,
+trailingStop: null,
+highest: px.price,
 openedAt: Date.now()
 });
 
 await reply(
 chatId,
-`✅ PAPER ${side.toUpperCase()} ${symbol}\nLev: ${lev}x Margin: $${fmt(margin)} Entry: $${fmt(px.price)}\nSource: ${px.source}${px.chain ? ` (${px.chain})` : ''}`
+`✅ PAPER ${side.toUpperCase()} ${symbol}
+Lev: ${lev}x Margin: $${fmt(margin)}
+Entry: $${fmtAdaptive(px.price)}
+Source: ${px.source}${px.chain ? ` (${px.chain})` : ''}`
 );
 return true;
 }
 
-async function closePaperPosition(chatId, symbol) {
+async function closePaperPosition(chatId, symbol, reason = null, silent = false) {
 const idx = portfolio.positions.findIndex(p => p.symbol === symbol);
 if (idx === -1) {
-if (chatId) await reply(chatId, `No open paper position for ${symbol}`);
+if (chatId && !silent) await reply(chatId, `No open paper position for ${symbol}`);
 return false;
 }
 
@@ -61,14 +69,14 @@ const pos = portfolio.positions[idx];
 const px = await getBestPrice(symbol);
 
 if (!px || !Number.isFinite(px.price)) {
-if (chatId) await reply(chatId, `No live price to close ${symbol} right now. Try again.`);
+if (chatId && !silent) await reply(chatId, `No live price to close ${symbol} right now. Try again.`);
 return false;
 }
 
-let pnl = 0;
 const move = (px.price - pos.entry) / pos.entry;
 const signed = pos.side === 'long' ? move : -move;
-pnl = pos.margin * pos.lev * signed;
+const pnl = pos.margin * pos.lev * signed;
+const roiPct = signed * 100 * pos.lev;
 
 portfolio.balance += pos.margin + pnl;
 portfolio.positions.splice(idx, 1);
@@ -77,12 +85,15 @@ const closedTrade = {
 ...pos,
 exit: px.price,
 exitSource: px.source,
+closeReason: reason || 'manual',
 pnl,
+roiPct,
 closedAt: Date.now()
 };
 
 portfolio.closed.unshift(closedTrade);
 if (portfolio.closed.length > 500) portfolio.closed.length = 500;
+
 if (trial.active) {
 trial.trades += 1;
 trial.totalPnl += pnl;
@@ -95,21 +106,55 @@ trial.grossLossAbs += Math.abs(pnl);
 }
 }
 
-if (chatId) await reply(chatId, `✅ Closed ${symbol}\nPnL: $${fmt(pnl)}\nBalance: $${fmt(portfolio.balance)}\nExit source: ${px.source}`);
+if (chatId && !silent) {
+await reply(
+chatId,
+`✅ Closed ${symbol}${reason ? ` (${reason})` : ''}
+Entry: $${fmtAdaptive(pos.entry)}
+Exit: $${fmtAdaptive(px.price)}
+PnL: $${fmtAdaptive(pnl)} (${fmtAdaptive(roiPct)}%)
+Balance: $${fmtAdaptive(portfolio.balance)}
+Exit source: ${px.source}`
+);
+}
 return true;
 }
 
+async function closeAllPositions(chatId) {
+const syms = portfolio.positions.map(p => p.symbol);
+if (!syms.length) {
+await reply(chatId, 'No open positions to close.');
+return;
+}
+
+let closed = 0;
+for (const s of syms) {
+const ok = await closePaperPosition(chatId, s, 'manual-closeall', true);
+if (ok) closed += 1;
+}
+
+await reply(chatId, `✅ Close-all complete.\nClosed: ${closed}\nOpen now: ${portfolio.positions.length}\nBalance: $${fmtAdaptive(portfolio.balance)}`);
+}
+
 async function handlePaper(chatId, parts) {
-if (parts.length < 3) {
-await reply(chatId, 'Usage:\n/paper long BTC 5 10\n/paper short ETH 3 20\n/paper close BTC');
+if (parts.length < 2) {
+await reply(chatId, 'Usage:\n/paper long BTC 5 10\n/paper short ETH 3 20\n/paper close BTC\n/paper closeall');
 return;
 }
 
 const action = (parts[1] || '').toLowerCase();
+if (action === 'closeall') {
+await closeAllPositions(chatId);
+return;
+}
 
 if (action === 'close') {
 const symbol = (parts[2] || '').toUpperCase();
-await closePaperPosition(chatId, symbol);
+if (!symbol) {
+await reply(chatId, 'Usage: /paper close <SYMBOL>');
+return;
+}
+await closePaperPosition(chatId, symbol, 'manual');
 return;
 }
 
@@ -135,4 +180,4 @@ return;
 await openPaperPosition(chatId, side, symbol, lev, margin);
 }
 
-module.exports = { handlePaper, openPaperPosition, closePaperPosition };
+module.exports = { handlePaper, openPaperPosition, closePaperPosition, closeAllPositions };

@@ -1,10 +1,21 @@
 const { reply } = require('../telegram');
 const { risk } = require('../state');
 const { openPaperPosition } = require('./paper');
-const { fmt } = require('../indicators');
+const { fmtAdaptive } = require('../indicators');
+const { getBestPrice } = require('../prices');
+
+function guardLevels(entry, stop, tp1, tp2) {
+// minimum absolute distance = 0.5% of entry
+const minDist = entry * 0.005;
+
+if (Math.abs(entry - stop) < minDist) stop = entry - minDist;
+if (Math.abs(tp1 - entry) < minDist) tp1 = entry + minDist;
+if (Math.abs(tp2 - entry) < minDist * 2) tp2 = entry + minDist * 2;
+
+return { stop, tp1, tp2 };
+}
 
 async function handleDexpick(chatId, parts) {
-// /dexpick WIF 15
 if (parts.length !== 3) {
 await reply(chatId, 'Usage: /dexpick <TOKEN> <amount>\nExample: /dexpick WIF 15');
 return;
@@ -12,30 +23,40 @@ return;
 
 const token = parts[1].toUpperCase();
 const amount = Number(parts[2]);
-
 if (!Number.isFinite(amount) || amount <= 0) {
 await reply(chatId, 'Amount must be a positive number.');
 return;
 }
 
-// DEX paper plan defaults
-// Since no direct per-token DEX price feed is wired yet, paper entry still uses current engine symbol availability.
-// For unsupported tokens, user gets graceful message from openPaperPosition.
-const syntheticEntry = 1; // only for plan math
-const stop = syntheticEntry * (1 - risk.dexStopPct / 100);
-const tp1 = syntheticEntry * (1 + risk.dexTpPct / 100);
+const px = await getBestPrice(token);
+if (!px || !Number.isFinite(px.price)) {
+await reply(chatId, `No live price found for ${token}.`);
+return;
+}
 
-const ok = await openPaperPosition(chatId, 'long', token, 3, amount, { stop, tp1 });
+const entry = px.price;
+let stop = entry * (1 - risk.dexStopPct / 100);
+let tp1 = entry * 1.20;
+let tp2 = entry * 1.40;
+const trailingArm = entry * 1.10;
+
+({ stop, tp1, tp2 } = guardLevels(entry, stop, tp1, tp2));
+
+const ok = await openPaperPosition(chatId, 'long', token, 3, amount, {
+stop, tp1, tp2, trailingArm
+});
 if (!ok) return;
 
 await reply(
 chatId,
 `🧪 DEX paper pick opened
 Token: ${token}
-Amount: $${fmt(amount)}
-Plan: TP +${risk.dexTpPct}% | SL -${risk.dexStopPct}%
-
-When real DEX price adapter is added, TP/SL will be market-accurate per token.`
+Entry: $${fmtAdaptive(entry)}
+Plan:
+• SL: $${fmtAdaptive(stop)}
+• TP1: $${fmtAdaptive(tp1)}
+• TP2: $${fmtAdaptive(tp2)}
+• Trailing arm: $${fmtAdaptive(trailingArm)}`
 );
 }
 

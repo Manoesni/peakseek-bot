@@ -2,9 +2,9 @@ const risk = {
 tier: 'safe',
 riskPct: 0.5,
 dailyMaxLossPct: 2.0,
-maxOpen: 2,
-dexStopPct: 12, // default DEX stop loss %
-dexTpPct: 25 // default DEX target %
+maxOpen: 8, // test mode
+dexStopPct: 12,
+dexTpPct: 25
 };
 
 const settings = {
@@ -14,11 +14,16 @@ budgets: { ETH: 0, BASE: 0, BNB: 0, ARB: 0, SOL: 0 },
 filters: {
 minConfidence: 55,
 minTrendPct: 0.01
-}
+},
+leverage: {
+majors: 5, // 2/3/5/10 presets
+dex: 3
+},
+majors: ['BTC', 'ETH', 'SOL']
 };
 
 const portfolio = {
-balance: 1000,
+balance: 10000,
 positions: [],
 closed: []
 };
@@ -26,7 +31,7 @@ closed: []
 const trial = {
 active: false,
 startedAt: null,
-startBalance: 1000,
+startBalance: 10000,
 trades: 0,
 wins: 0,
 losses: 0,

@@ -25,6 +25,9 @@ const { handleSemi } = require('./src/commands/semi');
 const { handleBitget } = require('./src/commands/bitget');
 const { handleDexscan } = require('./src/commands/dexscan');
 const { handleDexpick } = require('./src/commands/dexpick');
+const { handlePositions } = require('./src/commands/positions');
+const { handleLive } = require('./src/commands/live');
+const { handleLev } = require('./src/commands/lev');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -191,10 +194,13 @@ else if (cmd === '/wallet') await handleWallet(chatId, parts);
 else if (cmd === '/mode') await handleMode(chatId, parts);
 else if (cmd === '/chains') await handleChains(chatId, parts);
 else if (cmd === '/trial') await handleTrial(chatId, parts);
-else if (cmd === '/semi') await handleSemi(chatId, parts);
+else if (cmd === '/semi' || cmd === '/auto') await handleSemi(chatId, parts);
 else if (cmd === '/bitget') await handleBitget(chatId, parts);
 else if (cmd === '/dexscan') await handleDexscan(chatId, parts);
 else if (cmd === '/dexpick') await handleDexpick(chatId, parts);
+ else if (cmd === '/positions') await handlePositions(chatId);
+ else if (cmd === '/live') await handleLive(chatId);
+ else if (cmd === '/lev') await handleLev(chatId, parts);
 else await handleStart(chatId);
 }
 } catch {}

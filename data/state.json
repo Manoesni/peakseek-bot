@@ -1,0 +1,151 @@
+{
+  "savedAt": 1778824647217,
+  "portfolio": {
+    "balance": 50,
+    "positions": [],
+    "closed": []
+  },
+  "trial": {
+    "active": true,
+    "startedAt": 1778221600000,
+    "startBalance": 0,
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "totalPnl": 0,
+    "grossWin": 0,
+    "grossLossAbs": 0,
+    "reserve": 0,
+    "reservePct": 0.2,
+    "realizedPnl": 20.73294613854103,
+    "history": [
+      {
+        "ts": 1778802068569,
+        "symbol": "ARCHETYPE",
+        "type": "SPOT",
+        "reason": "HARD_SL",
+        "entry": 0.0001255,
+        "exit": 0.0001098,
+        "peak": 0.0001255,
+        "budget": 10.03019124612194,
+        "pnlUsd": -1.254772928797724,
+        "pnlPct": "-12.51"
+      },
+      {
+        "ts": 1778805068564,
+        "symbol": "OKGUY",
+        "type": "SPOT",
+        "reason": "HARD_SL",
+        "entry": 0.001247,
+        "exit": 0.001077,
+        "peak": 0.001247,
+        "budget": 10.03569575440454,
+        "pnlUsd": -1.368138154169023,
+        "pnlPct": "-13.63"
+      },
+      {
+        "ts": 1778806568406,
+        "symbol": "WCM",
+        "type": "SPOT",
+        "reason": "TRAIL_TP",
+        "entry": 0.0007976,
+        "exit": 0.001489,
+        "peak": 0.001674,
+        "budget": 5.0201157387997695,
+        "pnlUsd": 4.351690097550352,
+        "pnlPct": "86.69"
+      },
+      {
+        "ts": 1778810168277,
+        "symbol": "ALT",
+        "type": "SPOT",
+        "reason": "HARD_SL",
+        "entry": 0.000002214,
+        "exit": 0.000001349,
+        "peak": 0.000002487,
+        "budget": 10.042829084067213,
+        "pnlUsd": -3.9236888697913908,
+        "pnlPct": "-39.07"
+      }
+    ],
+    "balance": 0,
+    "balanceHistory": [],
+    "closedTrades": []
+  },
+  "autoPolicy": {
+    "enabled": true,
+    "mode": "live",
+    "perTradeUsd": 10,
+    "dailyMaxUsd": 500,
+    "maxOpen": 4,
+    "chainsEnabled": {
+      "ETH": true,
+      "BASE": true,
+      "BNB": true,
+      "ARB": true,
+      "SOL": true
+    }
+  },
+  "autoRuntime": {
+    "spentTodayUsd": 500,
+    "startedAt": 1776709627882
+  },
+  "settings": {
+    "mode": "semi",
+    "wallets": {
+      "evm": null,
+      "sol": null
+    },
+    "leverage": {
+      "majors": 5,
+      "dex": 3
+    }
+  },
+  "smartExit": {
+    "enabled": true,
+    "minHoldSec": 60,
+    "maxHoldSec": 600,
+    "weakPnLPctCut": -2.5,
+    "armTrailPnLPct": 3,
+    "trailDrawdownPct": 1.2
+  },
+  "smartAi": {
+    "enabled": true,
+    "minScoreToTrade": 55,
+    "minLiquidityUsd": 50000,
+    "minAbsChange24hPct": 0.5,
+    "maxSpreadPct": 1.5
+  },
+  "lossCooldown": {
+    "bySymbol": {
+      "AAVE": 1776708149246,
+      "TRX": 1776705748565,
+      "ARB": 1776707248984,
+      "AITECH": 1776711031370,
+      "GRANNY": 1776711071527,
+      "PAPU": 1776711081631,
+      "CLAWBANK": 1776711255854,
+      "ARIA": 1776768400302,
+      "TIG": 1776766935878,
+      "RAVE": 1776769331033,
+      "CYB3RWR3N": 1776767495126,
+      "BASED": 1777169012619
+    },
+    "byPair": {
+      "0x4674abc5796e1334B5075326b39B748bee9EaA34": 1776708149246,
+      "HpgV2jnzgrGfrZjeZGkHgTnEgRFAhtzCVuk3BRFTFJwk": 1776705748565,
+      "0xC6F780497A95e246EB9449f5e4770916DCd6396A": 1776707248984,
+      "0x80a02b0ec051de98c56212b30f22c5718928efdd": 1776711031370,
+      "5mo3MF1DJGLGenqH9LMRzTKpSc21AHtSCfYXHdnXnYCR": 1776711071527,
+      "CpFzRevnWnX9B9H4VyHvcLEWoc2UCkPZ3bV9CHx13fKb": 1776711081631,
+      "0xb04b187062efbf94cf9b4b6f42bf688258d3c88b7c9283bbc74dbbfb1af40d54": 1776711255854,
+      "0xa5dbeaf16fc031eae92175974f8d0a439be4ad17": 1776768400302,
+      "0x3f5e98c7ebff35056ab4346bccd722a537c1aefa": 1776766935878,
+      "0xca47e80bd01a1f5bcc8cf709d48a5399d533447e03d56f488498dc83c35b5831": 1776769331033,
+      "0xadb241a45a0b04acd80b20defdedf945a2bb1c2e2ee4c8331cadc1e95788c84c": 1776767495126,
+      "0xe85bc115847d7106b6335d067c6d2cf9b837ce50626a1df3f01d0012681a5db4": 1777169012619
+    },
+    "minutes": 30
+  },
+  "runnerEnabled": false
+}

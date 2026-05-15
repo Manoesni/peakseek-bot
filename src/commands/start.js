@@ -1,17 +1,12 @@
-const { reply } = require('../telegram');
+const { tg } = require('../telegram');
 
 async function handleStart(chatId) {
-await reply(
-chatId,
-`🌑 PeakSeek v0.2.0 (App-First)
-
-Open control center:
-🚀 /open
-
-Use chat mainly for:
-• /signal BTC
-• /semi off (emergency)
-• /help`
-);
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text: `⛰️ *PeakSeek* — use /start to set up your account.`,
+    parse_mode: 'Markdown',
+    reply_markup: JSON.stringify({ remove_keyboard: true }),
+  });
 }
+
 module.exports = { handleStart };

@@ -1,10 +1,11 @@
 const { reply } = require('../telegram');
 const { getCandles } = require('../hyperliquid');
 const { computeSignal, fmt } = require('../indicators');
-const { handleTopCex } = require('./topcex');
+const { handleDexscan } = require('./dexscan');
 
-const DEFAULT_SCAN = ['BTC', 'ETH', 'SOL', 'ARB', 'BNB', 'DOGE', 'XRP', 'ADA'];
-async function scanOne(symbol) {
+const HL_DEFAULT = ['BTC', 'ETH', 'SOL'];
+
+async function scanHL(symbol) {
 try {
 const candles = await getCandles(symbol);
 const closes = (candles || []).map(c => Number(c.c));
@@ -16,44 +17,39 @@ return null;
 }
 }
 
-async function handleTopDex(chatId) {
-const results = [];
-
-for (const s of DEFAULT_SCAN) {
-const r = await scanOne(s);
-if (r && r.side !== 'NEUTRAL') results.push(r);
-}
-
-if (!results.length) {
-await reply(chatId, '📊 /top dex: No strong LONG/SHORT setups right now.');
-return;
-}
-
-results.sort((a, b) => b.confidence - a.confidence);
-const top = results.slice(0, 5);
-
-let txt = '🔥 Top DEX Signals (v0.1.4)\n';
-for (const r of top) {
-txt += `\n• ${r.symbol} ${r.side} | conf ${fmt(r.confidence, 0)} | entry $${fmt(r.entry)} | stop $${fmt(r.stop)} | tp1 $${fmt(r.tp1)}`;
-}
-
-await reply(chatId, txt);
-}
-
 async function handleTop(chatId, parts) {
 // /top
+// /top hl
 // /top dex
-// /top cex
-if (parts.length === 1) {
-await handleTopDex(chatId);
+const sub = (parts[1] || 'hl').toLowerCase();
+
+if (sub === 'dex') {
+// delegate to dex scanner
+return handleDexscan(chatId, ['/dexscan', 'live', 'degen']);
+}
+
+if (sub !== 'hl') {
+await reply(chatId, 'Usage: /top [hl|dex]');
 return;
 }
 
-const sub = (parts[1] || '').toLowerCase();
-if (sub === 'dex') return handleTopDex(chatId);
-if (sub === 'cex') return handleTopCex(chatId);
+const rows = [];
+for (const s of HL_DEFAULT) {
+const r = await scanHL(s);
+if (r) rows.push(r);
+}
 
-await reply(chatId, 'Usage: /top [dex|cex]');
+if (!rows.length) {
+await reply(chatId, '⚡ HL scan: no data right now.');
+return;
+}
+
+let txt = '⚡ HL Majors Scan\n';
+for (const r of rows) {
+txt += `\n• ${r.symbol}: ${r.side} | conf ${fmt(r.confidence, 0)} | entry $${fmt(r.entry)} | stop $${fmt(r.stop)} | tp1 $${fmt(r.tp1)}`;
+}
+txt += '\n\nUse /signal BTC|ETH|SOL for verdict cards.';
+await reply(chatId, txt);
 }
 
 module.exports = { handleTop };

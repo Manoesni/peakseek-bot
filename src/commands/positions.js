@@ -3,23 +3,23 @@ const { portfolio } = require('../state');
 const { fmtAdaptive } = require('../indicators');
 
 async function handlePositions(chatId) {
-if (!portfolio.positions.length) {
+const rows = portfolio.positions || [];
+if (!rows.length) {
 await reply(chatId, 'No open positions.');
 return;
 }
 
-let txt = `📌 Open Positions (${portfolio.positions.length})`;
-for (const p of portfolio.positions) {
-txt += `
+const lines = rows.map((p) => {
+const lev = Number(p.leverage || p.lev || 3);
+return `#${p.id} ${String(p.symbol || '').toUpperCase()} ${String(p.side || 'long').toUpperCase()}
+Entry: $${fmtAdaptive(p.entry)} | Margin: $${fmtAdaptive(p.margin)} | Lev: ${lev}x
+SL: ${p.stop != null ? `$${fmtAdaptive(p.stop)}` : '-'} | TP1: ${p.tp1 != null ? `$${fmtAdaptive(p.tp1)}` : '-'} | TP2: ${p.tp2 != null ? `$${fmtAdaptive(p.tp2)}` : '-'}
+Trail: ${p.trailingOn ? `ON (${p.trailingStop ? '$' + fmtAdaptive(p.trailingStop) : 'n/a'})` : 'OFF'}
+Source: ${p.priceSource || 'n/a'}${p.chain ? ` (${p.chain})` : ''}
+Pair: ${p.pairAddress || 'n/a'}`;
+});
 
-#${p.id} ${p.symbol} ${p.side.toUpperCase()}
-Entry: $${fmtAdaptive(p.entry)} | Margin: $${fmtAdaptive(p.margin)} | Lev: ${p.lev}x
-SL: ${p.stop ? `$${fmtAdaptive(p.stop)}` : '-'} | TP1: ${p.tp1 ? `$${fmtAdaptive(p.tp1)}` : '-'} | TP2: ${p.tp2 ? `$${fmtAdaptive(p.tp2)}` : '-'}
-Trail: ${p.trailingOn ? `ON @ $${fmtAdaptive(p.trailingStop || 0)}` : 'OFF'}
-Source: ${p.priceSource || 'n/a'}${p.chain ? ` (${p.chain})` : ''}${p.pairAddress ? `\nPair: ${p.pairAddress}` : ''}`;
-}
-
-await reply(chatId, txt);
+await reply(chatId, `📌 Open Positions (${rows.length})\n\n${lines.join('\n\n')}`);
 }
 
 module.exports = { handlePositions };

@@ -14,7 +14,15 @@ if (c >= 62) return 'B';
 return 'C';
 }
 
+function tierRank(t) {
+if (t === 'A') return 3;
+if (t === 'B') return 2;
+return 1;
+}
+
 function recommendationFromSignal(sig) {
+const breakdown = [];
+
 if (!sig || sig.side === 'NEUTRAL') {
 return {
 verdict: '⛔ SKIP',
@@ -26,12 +34,21 @@ breakdown: ['trend: neutral']
 
 const t = trendPct(sig);
 const c = sig.confidence;
+const tier = confidenceTier(c);
 
-const breakdown = [
-`confidence=${fmt(c, 0)}`,
-`trend=${fmt(t)}%`,
-`sma20_vs_sma50=${sig.s20 > sig.s50 ? 'bull' : 'bear'}`
-];
+breakdown.push(`confidence=${fmt(c, 0)} (tier ${tier})`);
+breakdown.push(`trend=${fmt(t)}%`);
+breakdown.push(`sma20_vs_sma50=${sig.s20 > sig.s50 ? 'bull' : 'bear'}`);
+
+// no-trade zone first
+if (t < settings.filters.noTradeTrendPct) {
+return {
+verdict: '⛔ SKIP',
+action: 'SKIP',
+reason: `No-trade zone (trend ${fmt(t)}% < ${fmt(settings.filters.noTradeTrendPct)}%)`,
+breakdown
+};
+}
 
 if (c < settings.filters.minConfidence) {
 return {
@@ -51,11 +68,21 @@ breakdown
 };
 }
 
+const minTier = settings.filters.minTierForExecution || 'B';
+if (tierRank(tier) < tierRank(minTier)) {
+return {
+verdict: '⛔ SKIP',
+action: 'SKIP',
+reason: `Tier ${tier} below execution tier ${minTier}`,
+breakdown
+};
+}
+
 const action = sig.side === 'LONG' ? 'LONG' : 'SHORT';
 return {
 verdict: action === 'LONG' ? '✅ RECOMMEND LONG' : '✅ RECOMMEND SHORT',
 action,
-reason: `Trend+confidence pass`,
+reason: `Passes confidence, trend, and tier gates`,
 breakdown
 };
 }
@@ -107,7 +134,6 @@ Margin@${lev}x: ${fmt(sz.margin)}
 ${scenarioText(rec.action)}
 
 (Analysis only — no auto execution from /signal)`;
-
 if (rec.action === 'SKIP') {
 await reply(chatId, common);
 return;

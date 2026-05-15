@@ -5,12 +5,10 @@ let offset = 0;
 function replyKeyboard() {
 return JSON.stringify({
 keyboard: [
-[{ text: '🚀 /open' }, { text: '🧪 /dexscan live degen' }],
-[{ text: '⚖️ /lev' }, { text: '📌 /positions' }, { text: '📡 /live' }],
-[{ text: '🧾 /trial report' }, { text: '🧪 /trial start' }],
-[{ text: '🤖 /auto on' }, { text: '⏸ /auto off' }],
-[{ text: '🛑 /paper closeall' }, { text: '📂 /portfolio' }, { text: '🆘 /help' }],
-[{ text: '📈 /signal BTC' }, { text: '📈 /signal ETH' }, { text: '📈 /signal SOL' }]
+  [{ text: '📊 /trial' }, { text: '📌 /positions' }, { text: '💰 /portfolio' }],
+  [{ text: '🪙 /spot' }, { text: '🐋 /whale' }, { text: '📢 /social' }],
+  [{ text: '🤖 /auto on' }, { text: '⏸ /auto off' }, { text: '🛑 /paper closeall' }],
+  [{ text: '🚀 /open' }, { text: '🆘 /help' }]
 ],
 resize_keyboard: true
 });
@@ -77,7 +75,46 @@ text
 });
 }
 
+/**
+ * Send a message with inline buttons.
+ * @param {string|number} chatId
+ * @param {string} text
+ * @param {Array} buttons - Array of rows, each row is array of { text, callback_data }
+ */
+async function replyWithButtons(chatId, text, buttons) {
+return tg('sendMessage', {
+chat_id: String(chatId),
+text,
+parse_mode: 'Markdown',
+reply_markup: JSON.stringify({ inline_keyboard: buttons }),
+});
+}
+
+/**
+ * Send a plain message with parse_mode Markdown (for `code` formatting).
+ */
+async function replyMd(chatId, text) {
+return tg('sendMessage', {
+chat_id: String(chatId),
+text,
+parse_mode: 'Markdown',
+reply_markup: replyKeyboard(),
+});
+}
+
+/**
+ * Send a clean message with no persistent keyboard (for user-facing flows).
+ */
+async function replyClean(chatId, text) {
+return tg('sendMessage', {
+chat_id: String(chatId),
+text,
+parse_mode: 'Markdown',
+reply_markup: JSON.stringify({ remove_keyboard: true }),
+});
+}
+
 function getOffset() { return offset; }
 function setOffset(v) { offset = v; }
 
-module.exports = { tg, reply, replySignalCard, answerCallback, getOffset, setOffset };
+module.exports = { tg, reply, replyMd, replyClean, replyWithButtons, replySignalCard, answerCallback, getOffset, setOffset };

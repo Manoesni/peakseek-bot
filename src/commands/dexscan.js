@@ -1,7 +1,9 @@
 const { tg, reply } = require('../telegram');
-const { settings } = require('../state');
+const { settings, dexPickCache } = require('../state');
 const { getCandles } = require('../hyperliquid');
 const { computeSignal } = require('../indicators');
+
+const PAGE_SIZE = 6;
 
 function num(v, d = 0) {
 const n = Number(v);
@@ -18,7 +20,9 @@ const chain = String(p?.chainId || p?.chain || 'n/a').toUpperCase();
 const liq = num(p?.liquidity?.usd || p?.liquidityUsd, 0);
 const vol = num(p?.volume?.h24 || p?.volume24h, 0);
 const chg = num(p?.priceChange?.h24 || p?.priceChange24h, 0);
-if (!token) return null;
+const pairAddress = p?.pairAddress || null;
+const priceUsd = Number(p?.priceUsd);
+if (!token || !pairAddress || !Number.isFinite(priceUsd)) return null;
 
 const score = Math.max(1, Math.min(99, Math.round(
 Math.min(35, liq / 50000) +
@@ -26,15 +30,24 @@ Math.min(35, vol / 100000) +
 Math.min(20, Math.abs(chg) / 2) +
 10
 )));
-return { token, chain, liq, vol, chg, score };
+
+const riskBadge = liq >= 200000 ? '✅' : liq >= 50000 ? '⚠️' : '⛔';
+const baseX = liq >= 200000 ? 1.08 : liq >= 50000 ? 1.15 : 1.25;
+const strongX = liq >= 200000 ? 1.18 : liq >= 50000 ? 1.35 : 1.80;
+const stretchX = liq >= 200000 ? 1.35 : liq >= 50000 ? 1.9 : 3.5;
+
+// safety: filter major-like weird micro prices
+const majorLike = ['BTC', 'ETH', 'BNB', 'SOL', 'DOGE'].includes(token);
+if (majorLike && priceUsd < 0.01) return null;
+
+return { token, chain, liq, vol, chg, score, pairAddress, priceUsd, riskBadge, baseX, strongX, stretchX };
 }
-function dedupTokenChain(rows) {
+function dedupByPair(rows) {
 const seen = new Set();
 const out = [];
 for (const r of rows) {
-const k = `${r.token}|${r.chain}`;
-if (seen.has(k)) continue;
-seen.add(k);
+if (seen.has(r.pairAddress)) continue;
+seen.add(r.pairAddress);
 out.push(r);
 }
 return out;
@@ -53,6 +66,16 @@ const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
 return pairs.map(normPair).filter(Boolean);
 }
 
+// CMC intake skeleton (non-blocking placeholder for next patch)
+async function fetchCmcDexSignalsSkeleton() {
+return {
+enabled: true,
+source: 'CMC',
+note: 'connector skeleton active (full parse next patch)',
+url: 'https://dex.coinmarketcap.com/token/all/?tableRankBy=trending_5m'
+};
+}
+
 async function majorsSummary() {
 const out = [];
 for (const s of settings.majors) {
@@ -67,11 +90,50 @@ out.push({ symbol: s, side: sig.side, conf: Math.round(sig.confidence), entry: N
 return out;
 }
 
-async function handleDexscan(chatId, parts = []) {
-const sub = (parts[1] || '').toLowerCase();
-const mode = (parts[2] || '').toLowerCase();
+function buildPage(rows, page, mode) {
+const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+const p = Math.max(0, Math.min(page, totalPages - 1));
+const start = p * PAGE_SIZE;
+const slice = rows.slice(start, start + PAGE_SIZE);
 
-if (sub === 'live') {
+let txt = `🧪 DEX Scan ${mode === 'degen' ? '(DEGEN)' : '(STANDARD)'}\nPage ${p + 1}/${totalPages}\n`;
+slice.forEach((r, i) => {
+const idx = start + i;
+txt += `\n${idx + 1}) ${r.riskBadge} ${r.token} (${r.chain}) | score ${r.score} | liq ${fmtUsd(r.liq)} | 24h ${r.chg.toFixed(1)}%`;
+txt += `\n X: Base ${r.baseX.toFixed(2)}x | Strong ${r.strongX.toFixed(2)}x | Stretch ${r.stretchX.toFixed(2)}x`;
+});
+
+return { page: p, totalPages, slice, text: txt };
+}
+
+async function sendPaged(chatId, rows, mode, page = 0) {
+const { page: p, totalPages, slice, text } = buildPage(rows, page, mode);
+const buttons = slice.map((r, i) => {
+const globalIdx = p * PAGE_SIZE + i;
+return [{ text: `${globalIdx + 1}) ${r.token} • ${r.chain}`, callback_data: `dexpairidx_${globalIdx}` }];
+});
+
+const nav = [];
+if (p > 0) nav.push({ text: '⬅️ Prev', callback_data: `dexpage_${mode}_${p - 1}` });
+if (p < totalPages - 1) nav.push({ text: 'Next ➡️', callback_data: `dexpage_${mode}_${p + 1}` });
+if (nav.length) buttons.push(nav);
+
+await tg('sendMessage', {
+chat_id: String(chatId),
+text: text + '\n\nTap a pair button to choose amount.',
+reply_markup: JSON.stringify({ inline_keyboard: buttons })
+});
+}
+
+async function handleDexscan(chatId, parts = []) {
+const sub = (parts[1] || 'live').toLowerCase();
+const mode = (parts[2] || 'degen').toLowerCase();
+
+if (sub !== 'live') {
+await reply(chatId, `🧪 DEX Scan\n• /dexscan live\n• /dexscan live degen`);
+return;
+}
+
 let rows = [
 ...(await fetchSearch('SOL')),
 ...(await fetchSearch('BASE')),
@@ -85,18 +147,18 @@ let rows = [
 ...(await fetchSearch('FLOKI'))
 ];
 
-rows = dedupTokenChain(rows);
+rows = dedupByPair(rows);
 
 if (mode === 'degen') {
 rows = rows
 .filter(r => r.liq > 1000 && r.liq < 1500000 && Math.abs(r.chg) > 1)
 .sort((a, b) => (Math.abs(b.chg) + b.score) - (Math.abs(a.chg) + a.score))
-.slice(0, 12);
+.slice(0, 24);
 } else {
 rows = rows
 .filter(r => r.liq >= 30000)
 .sort((a, b) => b.score - a.score)
-.slice(0, 12);
+.slice(0, 24);
 }
 
 if (!rows.length) {
@@ -104,34 +166,19 @@ await reply(chatId, '🧪 DEX scan found no usable rows right now. Try again sho
 return;
 }
 
-let txt = `🧪 DEX Scan Live ${mode === 'degen' ? '(DEGEN)' : '(STANDARD)'}\n`;
-rows.forEach((r, i) => {
-txt += `\n${i + 1}) ${r.token} (${r.chain}) | score ${r.score} | liq ${fmtUsd(r.liq)} | 24h ${r.chg.toFixed(1)}%`;
-});
+dexPickCache.set(String(chatId), rows);
+await sendPaged(chatId, rows, mode, 0);
+
+const cmc = await fetchCmcDexSignalsSkeleton();
+await reply(chatId, `📡 Source status: DexScreener live ✅ | CMC ${cmc.enabled ? 'skeleton ✅' : 'off'} (${cmc.note})`);
 
 const majors = await majorsSummary();
 if (majors.length) {
-txt += `\n\n⚡ Majors Futures (lev ${settings.leverage.majors}x)`;
-for (const m of majors) {
-txt += `\n• ${m.symbol}: ${m.side} | conf ${m.conf} | entry ${m.entry.toFixed(2)}`;
+let mtxt = `⚡ HL Majors Snapshot (lev ${settings.leverage.majors}x)`;
+for (const m of majors) mtxt += `\n• ${m.symbol}: ${m.side} | conf ${m.conf} | entry ${m.entry.toFixed(2)}`;
+mtxt += `\nUse /top hl for HL-only list, /top dex for DEX list.`;
+await reply(chatId, mtxt);
 }
-txt += `\nUse /signal BTC or /signal ETH for action cards.`;
-}
-
-txt += '\n\nTap a pair button to choose amount.';
-const buttons = rows.slice(0, 8).map((r, i) => ([
-{ text: `${i + 1}) ${r.token} • ${r.chain}`, callback_data: `dexpair_${r.token}_${r.chain}` }
-]));
-
-await tg('sendMessage', {
-chat_id: String(chatId),
-text: txt,
-reply_markup: JSON.stringify({ inline_keyboard: buttons })
-});
-return;
 }
 
-await reply(chatId, `🧪 DEX Scan\n• /dexscan live\n• /dexscan live degen\n• /lev`);
-}
-
-module.exports = { handleDexscan };
+module.exports = { handleDexscan, sendPaged };

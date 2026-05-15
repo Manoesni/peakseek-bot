@@ -1,0 +1,102 @@
+{
+  "1747273438": {
+    "telegramUserId": "1747273438",
+    "publicKey": "C2q2obZugruPiihWaQf5oT64o9aSWRUTnbBiB9yjNKp6",
+    "privateKey": "wHGWns1FJkVRR3iyZ0ZyjHFqxj4QlXDLa6JA+4kaz2Oj6HIoYWIT0QkTAmLyeHo+P41J8HDRIAG7ln5dehLUGw==",
+    "createdAt": 1778703998947,
+    "depositOrders": [
+      {
+        "orderId": "a569c96c864da3",
+        "sendAddress": "TDMJKQce4jPiKozbXN57u8tJrKAn5jDrKa",
+        "sendAmount": 100,
+        "receiveAmount": 1.0292086,
+        "processingTime": "5-30",
+        "recordedAt": 1778825639093
+      },
+      {
+        "orderId": "61bd557fab93b2",
+        "sendAddress": "TC2Rvss6wXy4QG5ownc9DiMsrauuAqVXCe",
+        "sendAmount": 100,
+        "receiveAmount": 1.027194,
+        "processingTime": "5-30",
+        "recordedAt": 1778826753868
+      },
+      {
+        "orderId": "4c17502718b8db",
+        "sendAddress": "TEVt9HL732fMnm5iSN7p9UdVtaxNZGBfFf",
+        "sendAmount": 100,
+        "receiveAmount": 1.0184886,
+        "processingTime": "5-30",
+        "recordedAt": 1778831827147
+      },
+      {
+        "orderId": "b68df8e432cfce",
+        "sendAddress": "TM4K3jKnahp8eravBKfCtgGE6RGxezEqkM",
+        "sendAmount": 50,
+        "receiveAmount": 0.4794546,
+        "processingTime": "5-30",
+        "recordedAt": 1778832530542
+      },
+      {
+        "orderId": "238aceac556eb8",
+        "sendAddress": "TJVHEuurSus48RHXM8UdrLiE8hKcLAdWF4",
+        "sendAmount": 15,
+        "receiveAmount": 0.100171,
+        "processingTime": "5-30",
+        "recordedAt": 1778832910164
+      },
+      {
+        "orderId": "024bb73a23f577",
+        "sendAddress": "TJJV5rsTVhJFfAsxL1hTtwWt8puPjmpgR6",
+        "sendAmount": 15,
+        "receiveAmount": 0.1003103,
+        "processingTime": "5-30",
+        "recordedAt": 1778833415570
+      },
+      {
+        "orderId": "8c406cccf776cd",
+        "sendAddress": "TNwo2RPo49tcCkASyM1iXzdQyJXyvV9pNB",
+        "sendAmount": 15,
+        "receiveAmount": 0.100266,
+        "processingTime": "5-30",
+        "recordedAt": 1778833506249
+      },
+      {
+        "orderId": "09517c81a33f08",
+        "sendAddress": "TWpMZeyDLqx5rXpV3GTBRvmPM4UMcxVHw3",
+        "sendAmount": 15,
+        "receiveAmount": 0.1002481,
+        "processingTime": "5-30",
+        "recordedAt": 1778835511641
+      },
+      {
+        "orderId": "e8541b3931fd29",
+        "sendAddress": "TKjFPBcFV722CavKi7ZdzRG53PNkhVXoZ7",
+        "sendAmount": 15,
+        "receiveAmount": 0.1022961,
+        "processingTime": "5-30",
+        "recordedAt": 1778872469024
+      },
+      {
+        "orderId": "7259516d28394d",
+        "sendAddress": "TMNpJsPie7UJVRZyJtfPXgoxSNz9qrVBds",
+        "sendAmount": 50,
+        "receiveAmount": 0.4918845,
+        "processingTime": "5-30",
+        "recordedAt": 1778876538260
+      }
+    ],
+    "withdrawOrders": [
+      {
+        "orderId": "dc08f71a027fc4",
+        "sendAddress": "AETXjWuKvaKSi8G33XBFvZmZSQPZ1g21E9Xqs4PTvjrY",
+        "sendAmount": 0.20057199,
+        "receiveAmount": 12.009815,
+        "processingTime": "5-30",
+        "recordedAt": 1778875111339
+      }
+    ],
+    "botEnabled": true,
+    "botToggleAt": 1778876659070
+  }
+}

@@ -1,10 +1,12 @@
+require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const { tg, getOffset, setOffset, reply } = require('./src/telegram');
-const { settings, portfolio, trial } = require('./src/state');
-const { setSemiEnabled, getSemiStatus, startSemiLoop } = require('./src/runner');
+const { settings, portfolio, trial, pendingInput } = require('./src/state');
+const { setSemiEnabled, getSemiStatus, startSemiLoop } = require('./src/runner')
+// spot loaded lazily inside scheduler
 
 const { handleStart } = require('./src/commands/start');
 const { handleHelp } = require('./src/commands/help');
@@ -13,7 +15,7 @@ const { handleRisk } = require('./src/commands/risk');
 const { handleSignal } = require('./src/commands/signal');
 const { handleTop } = require('./src/commands/top');
 const { handlePortfolio } = require('./src/commands/portfolio');
-const { handlePaper } = require('./src/commands/paper');
+const { handlePaper, openPaperPosition } = require('./src/commands/paper');
 const { handleCallback } = require('./src/commands/callback');
 const { handleHistory } = require('./src/commands/history');
 const { handleWallet } = require('./src/commands/wallet');
@@ -28,6 +30,10 @@ const { handleDexpick } = require('./src/commands/dexpick');
 const { handlePositions } = require('./src/commands/positions');
 const { handleLive } = require('./src/commands/live');
 const { handleLev } = require('./src/commands/lev');
+const { handleAutocore } = require('./src/commands/autocore');
+const { bootLoad, persistNow } = require('./src/state');
+const { refreshGasStatus } = require('./src/autocore');
+const { runAutoPickOnce } = require('./src/autopicker');
 
 function normalizeCommandText(raw = '') {
 const idx = raw.indexOf('/');
@@ -37,7 +43,6 @@ return clean.trim().replace(/\s+/g, ' ');
 
 const PORT = process.env.PORT || 3000;
 const WEB_ROOT = path.join(__dirname, 'web');
-
 const mime = {
 '.html': 'text/html; charset=utf-8',
 '.css': 'text/css; charset=utf-8',
@@ -53,7 +58,6 @@ function sendJson(res, code, obj) {
 res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
 res.end(JSON.stringify(obj));
 }
-
 function parseBody(req) {
 return new Promise((resolve) => {
 let data = '';
@@ -70,6 +74,35 @@ res.end('ok');
 return;
 }
 
+if (req.method === 'GET' && req.url === '/api/positions') {
+  const base = '/Users/macpro/Desktop/peakseek/src';
+  function safeGet(rp){try{delete require.cache[require.resolve(rp)];return require(rp)}catch(e){return null}}
+  const spot=safeGet(base+'/spot'); const whale=safeGet(base+'/whale_watcher'); const social=safeGet(base+'/social_agent'); const wf=safeGet(base+'/wallet_follower');
+  const ss=spot?spot.getSpotStatus():null; const ws=whale?whale.getWhaleStatus():null; const so=social?social.getSocialStatus():null; const wfs=wf?wf.getWalletFollowerStatus():null;
+  const allPos=[];
+  (portfolio.positions||[]).forEach(p=>allPos.push({symbol:p.symbol||p.name,agent:'futures',agentLabel:'🤖 Futures',chain:p.chain||'HL',entryPrice:p.entryPrice||0,currentPrice:p.currentPrice||p.entryPrice||0,budget:p.budget||p.size||0,openedAt:p.openedAt||p.entryTime||null,source:'scanner',pnlPct:p.entryPrice>0?(p.currentPrice-p.entryPrice)/p.entryPrice*100:0,pnlUsd:p.pnlUsd||0}));
+  if(ss&&ss.positions)ss.positions.forEach(p=>allPos.push({symbol:p.symbol||p.name,agent:'spot',agentLabel:'🪙 Spot',chain:p.chain||'SOL',entryPrice:p.entryPrice||0,currentPrice:p.currentPrice||p.entryPrice||0,budget:p.budget||0,openedAt:p.openedAt||null,source:p.source||'geckoterminal',pnlPct:p.entryPrice>0?(p.currentPrice-p.entryPrice)/p.entryPrice*100:0,pnlUsd:p.pnlUsd||0}));
+  if(ws&&ws.positions)ws.positions.forEach(p=>allPos.push({symbol:p.symbol||p.name,agent:'whale',agentLabel:'🐋 Whale',chain:p.chain||'?',entryPrice:p.entryPrice||0,currentPrice:p.currentPrice||p.entryPrice||0,budget:p.budget||0,openedAt:p.openedAt||null,source:'on-chain',pnlPct:p.entryPrice>0?(p.currentPrice-p.entryPrice)/p.entryPrice*100:0,pnlUsd:p.pnlUsd||0}));
+  if(so&&so.positions)so.positions.forEach(p=>allPos.push({symbol:p.symbol||p.name,agent:'social',agentLabel:'📢 Social',chain:p.chain||'SOL',entryPrice:p.entryPrice||0,currentPrice:p.currentPrice||p.entryPrice||0,budget:p.budget||0,openedAt:p.openedAt||null,source:p.source||'dexscreener',pnlPct:p.entryPrice>0?(p.currentPrice-p.entryPrice)/p.entryPrice*100:0,pnlUsd:p.pnlUsd||0}));
+  if(wfs&&wfs.positions)wfs.positions.forEach(p=>allPos.push({symbol:p.symbol||p.name,agent:'wallets',agentLabel:'👛 Wallets',chain:'SOL',entryPrice:p.entryPrice||0,currentPrice:p.currentPrice||p.entryPrice||0,budget:p.budget||0,openedAt:p.openedAt||null,source:p.source||'copy',pnlPct:p.entryPrice>0?(p.currentPrice-p.entryPrice)/p.entryPrice*100:0,pnlUsd:p.pnlUsd||0}));
+  const t=trial||{}; const trades=t.trades||0,wins=t.wins||0,losses=t.losses||0,gw=t.grossWin||0,gl=t.grossLossAbs||0;
+  const agents={futures:{label:'🤖 Futures',running:true,openPositions:(portfolio.positions||[]).length,maxPositions:3},spot:ss?{label:'🪙 Spot',running:ss.running,openPositions:ss.openPositions,maxPositions:ss.maxPositions||2}:{label:'🪙 Spot',running:false,openPositions:0,maxPositions:2},whale:ws?{label:'🐋 Whale',running:ws.running,openPositions:ws.openPositions,maxPositions:ws.maxPositions||2}:{label:'🐋 Whale',running:false,openPositions:0,maxPositions:2},social:so?{label:'📢 Social',running:so.running,openPositions:so.openPositions,maxPositions:so.maxPositions||2}:{label:'📢 Social',running:false,openPositions:0,maxPositions:2},wallets:wfs?{label:'👛 Wallets',running:wfs.running,openPositions:wfs.openPositions,maxPositions:wfs.maxPositions||3}:{label:'👛 Wallets',running:false,openPositions:0,maxPositions:3}};
+  // Fetch live SOL wallet balance async, respond immediately after
+  const SOL_WALLET='C2q2obZugruPiihWaQf5oT64o9aSWRUTnbBiB9yjNKp6';
+  const _https=require('https');
+  function _rpc(body){return new Promise((resolve)=>{const d=JSON.stringify(body);const o={hostname:'api.mainnet-beta.solana.com',path:'/',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(d)}};const r=_https.request(o,res2=>{let raw='';res2.on('data',c=>raw+=c);res2.on('end',()=>{try{resolve(JSON.parse(raw))}catch{resolve(null)}})});r.on('error',()=>resolve(null));r.write(d);r.end()});}
+  function _price(){return new Promise((resolve)=>{_https.get('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',r=>{let raw='';r.on('data',c=>raw+=c);r.on('end',()=>{try{resolve(JSON.parse(raw)?.solana?.usd||0)}catch{resolve(0)}})}).on('error',()=>resolve(0));});}
+  Promise.all([_rpc({jsonrpc:'2.0',id:1,method:'getBalance',params:[SOL_WALLET,{commitment:'confirmed'}]}),_price()]).then(([balRes,solPrice])=>{
+    const lamports=balRes?.result?.value||0;
+    const solBal=lamports/1e9;
+    const walletBalanceUsd=+(solBal*solPrice).toFixed(2);
+    const netPnl=gw-gl;
+    sendJson(res,200,{ok:true,timestamp:Date.now(),positions:allPos,agents,walletBalanceUsd,fundedUsd:50,trial:{trades,wins,losses,winRate:trades>0?Math.round(wins/trades*100):0,grossWin:gw.toFixed(2),grossLoss:gl.toFixed(2),netPnl:netPnl.toFixed(2),avgWin:wins>0?(gw/wins).toFixed(2):'0.00',avgLoss:losses>0?(gl/losses).toFixed(2):'0.00',balance:(portfolio.balance||0).toFixed(2)}});
+  }).catch(()=>{
+    sendJson(res,200,{ok:true,timestamp:Date.now(),positions:allPos,agents,walletBalanceUsd:0,fundedUsd:50,trial:{trades,wins,losses,winRate:trades>0?Math.round(wins/trades*100):0,grossWin:gw.toFixed(2),grossLoss:gl.toFixed(2),netPnl:(gw-gl).toFixed(2),avgWin:wins>0?(gw/wins).toFixed(2):'0.00',avgLoss:losses>0?(gl/losses).toFixed(2):'0.00',balance:(portfolio.balance||0).toFixed(2)}});
+  });
+  return; // response sent async above
+}
 if (req.method === 'GET' && req.url === '/api/status') {
 const semi = getSemiStatus();
 return sendJson(res, 200, {
@@ -88,6 +121,8 @@ if (req.method === 'POST' && req.url === '/api/setup') {
 const body = await parseBody(req);
 const w = body.wallets || {};
 const b = body.budgets || {};
+const l = body.leverage || {};
+const r = body.risk || {};
 
 settings.mode = body.mode || settings.mode;
 settings.wallets.evm = w.evm || settings.wallets.evm;
@@ -97,6 +132,10 @@ settings.budgets.BASE = Number(b.BASE || 0);
 settings.budgets.BNB = Number(b.BNB || 0);
 settings.budgets.ARB = Number(b.ARB || 0);
 settings.budgets.SOL = Number(b.SOL || 0);
+
+if (Number.isFinite(Number(l.majors))) settings.leverage.majors = Number(l.majors);
+if (Number.isFinite(Number(l.dex))) settings.leverage.dex = Number(l.dex);
+if (Number.isFinite(Number(r.maxOpen))) require('./src/state').risk.maxOpen = Number(r.maxOpen);
 
 return sendJson(res, 200, { ok: true });
 }
@@ -134,6 +173,62 @@ return sendJson(res, 200, { ok: true, action: 'stop' });
 return sendJson(res, 400, { ok: false, error: 'invalid action' });
 }
 
+if (req.method === 'GET' && req.url === '/api/debug') {
+  const { getAllUserIds, getUserPublicKey } = require('./src/user_wallets');
+  const uids = getAllUserIds();
+  return sendJson(res, 200, { uids, pubkey: uids[0] ? getUserPublicKey(uids[0]) : null, cwd: process.cwd(), env: !!process.env.CHANGENOW_API_KEY });
+}
+
+if (req.method === 'GET' && req.url === '/api/wallet') {
+  const { getAllUserIds, getUserWalletInfo, getUserPublicKey } = require('./src/user_wallets');
+  const uids = getAllUserIds();
+  if (!uids.length) return sendJson(res, 200, { ok: true, trc20UsdtBalance: 0, solBalanceUsd: 0 });
+  const uid = uids[0];
+  const info = getUserWalletInfo(uid);
+  const solPub = getUserPublicKey(uid);
+  let solBalance = 0;
+  let solBalanceUsd = 0;
+  const RPCS = ['https://solana-rpc.publicnode.com','https://rpc.ankr.com/solana','https://api.mainnet-beta.solana.com'];
+  for (const rpc of RPCS) {
+    try {
+      const resp = await fetch(rpc, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [solPub] }), signal: AbortSignal.timeout(5000) });
+      const json = await resp.json();
+      if (json?.result?.value !== undefined) { solBalance = json.result.value / 1e9; break; }
+    } catch { continue; }
+  }
+  try {
+    const pr = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112', { signal: AbortSignal.timeout(5000) }).then(r=>r.json()).catch(()=>null);
+    const price = pr?.data?.['So11111111111111111111111111111111111111112']?.price || 0;
+    solBalanceUsd = solBalance * price;
+  } catch {}
+  return sendJson(res, 200, { ok: true, trc20Address: info?.trc20Address || null, solPublicKey: solPub, trc20UsdtBalance: 0, solBalanceUsd });
+}
+
+if (req.method === 'POST' && req.url === '/api/deposit') {
+  const body = await parseBody(req);
+  const amount = parseFloat(body.amount) || 50;
+  try {
+    const { getAllUserIds, getUserPublicKey, recordDepositOrder } = require('./src/user_wallets');
+    const { createDepositOrder } = require('./src/changenow');
+    const uids = getAllUserIds();
+    if (!uids.length) return sendJson(res, 400, { ok: false, error: 'No wallet found. Please use /start in the bot first.' });
+    const solPub = getUserPublicKey(uids[0]);
+    const order = await createDepositOrder(amount, solPub, null);
+    recordDepositOrder(uids[0], order);
+    return sendJson(res, 200, { ok: true, address: order.sendAddress, amount: order.sendAmount, orderId: order.orderId });
+  } catch (e) {
+    return sendJson(res, 500, { ok: false, error: e.message });
+  }
+}
+
+if (req.method === 'POST' && req.url === '/api/bot') {
+  const body = await parseBody(req);
+  const { setBotEnabled, getAllUserIds } = require('./src/user_wallets');
+  const uids = getAllUserIds();
+  if (uids.length) setBotEnabled(uids[0], !!body.enabled);
+  return sendJson(res, 200, { ok: true, enabled: !!body.enabled });
+}
+
 const urlPath = req.url === '/' ? '/index.html' : req.url;
 const cleanPath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
 const filePath = path.join(WEB_ROOT, cleanPath);
@@ -154,10 +249,89 @@ server.listen(PORT, () => {
 console.log(`Mini app server listening on ${PORT}`);
 });
 
+// Restore persisted state on boot
+bootLoad();
+if (global._runnerEnabled || require('./src/state').autoPolicy?.enabled) {
+  const { setSemiEnabled } = require('./src/runner');
+  setSemiEnabled(true);
+  global._runnerEnabled = true;
+  console.log('[boot] Semi/auto loop restored from saved state.');
+}
 startSemiLoop(null, reply);
+
+// AUTO_START_SCHEDULER — runs on every boot automatically
+setTimeout(async () => {
+  try {
+    const { setSemiEnabled } = require('./src/runner');
+    const { runAutoPickOnce } = require('./src/autopicker');
+    const stateRef = require('./src/state');
+
+    // Enable runner and autocore
+    setSemiEnabled(true);
+    stateRef.autoPolicy.enabled = true;
+
+    // Start spot trading loop (paper mode — no real wallet needed)
+    // Stagger spot loop start by 60s to avoid 429 rate limits on GeckoTerminal
+    setTimeout(() => { try { const spotPath = '/Users/macpro/Desktop/peakseek/src/spot'; const { startSpotLoop: _sl } = require(spotPath); const p = _sl(0); if (p && p.catch) p.catch(e => console.error('[boot] spot loop error:', e.message)); } catch(e) { console.error('[boot] spot load error:', e.message); } }, 60 * 1000);
+
+    // Whale Watcher — starts 3 min after boot (staggered after spot at 1min)
+    setTimeout(() => {
+      try {
+        const whalePath = '/Users/macpro/Desktop/peakseek/src/whale_watcher';
+        const { startWhaleWatcher: _sw } = require(whalePath);
+        const wp = _sw(0);
+        if (wp && wp.catch) wp.catch(e => console.error('[whale] start error:', e.message));
+      } catch(e) { console.error('[whale] load error:', e.message); }
+    }, 3 * 60 * 1000);
+
+    // Social Agent — starts 4.5 min after boot
+    setTimeout(() => {
+      try {
+        const socialPath = '/Users/macpro/Desktop/peakseek/src/social_agent';
+        const { startSocialAgent: _ss } = require(socialPath);
+        const sp = _ss(0);
+        if (sp && sp.catch) sp.catch(e => console.error('[social] start error:', e.message));
+      } catch(e) { console.error('[social] load error:', e.message); }
+    }, 4.5 * 60 * 1000);
+
+    // Wallet Follower — starts 30s after boot
+    setTimeout(() => {
+      try {
+        const wfPath = '/Users/macpro/Desktop/peakseek/src/wallet_follower';
+        const { startWalletFollower: _wf } = require(wfPath);
+        _wf(0);
+        console.log('[wf] startWalletFollower called OK');
+      } catch(e) { console.error('[wf] load error:', e.message); }
+    }, 30 * 1000);
+
+    console.log('[boot] Auto-scheduler started — picking every 5 minutes');
+
+    // Run once immediately on boot
+    await runAutoPickOnce(null, true).catch(() => {});
+
+    // Then every 5 minutes automatically
+    setInterval(async () => {
+      try {
+        await runAutoPickOnce(null, false);
+      } catch (e) {
+        console.error('[scheduler] pick error:', e.message);
+      }
+    }, 8 * 60 * 1000);
+
+  } catch (e) {
+    console.error('[boot] Auto-scheduler error:', e.message);
+  }
+}, 3000);
+
+setInterval(() => { try { refreshGasStatus(); } catch {} }, 15000);
 (async () => {
 await tg('deleteWebhook', { drop_pending_updates: 'true' });
 console.log('PeakSeek modular bot running...');
+
+// Catch any unhandled promise rejections so they don't kill the process
+process.on('unhandledRejection', (err) => {
+  console.error('[process] unhandledRejection:', err?.message || err);
+});
 
 while (true) {
 try {
@@ -176,33 +350,202 @@ const msg = it.message;
 if (!msg || !msg.text) continue;
 
 const chatId = msg.chat.id;
-const normalized = normalizeCommandText(msg.text);
+const raw = String(msg.text || '').trim();
+
+const pending = pendingInput.get(String(chatId));
+if (pending) {
+const amt = Number(raw);
+if (!Number.isFinite(amt) || amt <= 0) {
+await reply(chatId, 'Please send a valid positive number amount (example: 250).');
+continue;
+}
+
+pendingInput.delete(String(chatId));
+
+if (pending.kind === 'paper_custom') {
+const lev = Number(settings.leverage?.majors || 5);
+await openPaperPosition(chatId, pending.side, pending.symbol, lev, amt);
+continue;
+}
+
+if (pending.kind === 'dexpick_custom') {
+await handleDexpick(chatId, ['/dexpick', pending.token, String(amt)]);
+continue;
+}
+
+if (pending.kind === 'dexpick_custom_pair') {
+await handleDexpick(chatId, [
+'/dexpick',
+pending.token,
+String(amt),
+pending.chain || '',
+pending.pairAddress || '',
+String(pending.priceUsd || '')
+]);
+continue;
+}
+}
+
+const normalized = normalizeCommandText(raw);
 const parts = normalized.split(/\s+/);
 const cmd = (parts[0] || '').toLowerCase();
 
-if (cmd === '/start') await handleStart(chatId);
+if (cmd === '/start') await handleOnboardingStart(chatId, userId, firstName);
+else if (cmd === '/deposit') await handleOnboardingDeposit(chatId, userId, 50);
+else if (cmd === '/withdraw') await handleOnboardingWithdraw(chatId, userId, parts);
+else if (cmd === '/balance') await handleBalance(chatId, userId);
 else if (cmd === '/open') await handleOpen(chatId);
 else if (cmd === '/help') await handleHelp(chatId);
 else if (cmd === '/ping') await handlePing(chatId);
 else if (cmd === '/risk') await handleRisk(chatId, parts);
-else if (cmd === '/signal') await handleSignal(chatId, parts);
-else if (cmd === '/top') await handleTop(chatId, parts);
-else if (cmd === '/portfolio') await handlePortfolio(chatId);
-else if (cmd === '/paper') await handlePaper(chatId, parts);
-else if (cmd === '/history') await handleHistory(chatId);
-else if (cmd === '/wallet') await handleWallet(chatId, parts);
-else if (cmd === '/mode') await handleMode(chatId, parts);
-else if (cmd === '/chains') await handleChains(chatId, parts);
-else if (cmd === '/trial') await handleTrial(chatId, parts);
-else if (cmd === '/semi' || cmd === '/auto') await handleSemi(chatId, parts);
-else if (cmd === '/bitget') await handleBitget(chatId, parts);
-else if (cmd === '/dexscan') await handleDexscan(chatId, parts);
-else if (cmd === '/dexpick') await handleDexpick(chatId, parts);
- else if (cmd === '/positions') await handlePositions(chatId);
- else if (cmd === '/live') await handleLive(chatId);
- else if (cmd === '/lev') await handleLev(chatId, parts);
-else await handleStart(chatId);
+
+  
+  else if (cmd === '/social') {
+    try {
+      const { getSocialStatus } = require('/Users/macpro/Desktop/peakseek/src/social_agent');
+      const s = getSocialStatus();
+      const lines = [
+        `📢 *Social Agent*`,
+        `Status: ${s.running ? '🟢 Running' : '🔴 Stopped'}`,
+        `Open: ${s.openPositions}/${s.maxPositions} positions`,
+        `Boosted tokens tracked: ${s.boostedCount}`,
+      ];
+      if (s.positions && s.positions.length > 0) {
+        lines.push('');
+        s.positions.forEach(p => {
+          const pct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100).toFixed(1) : '0.0';
+          lines.push(`• ${p.symbol} ${pct >= 0 ? '+' : ''}${pct}% [${p.source}]`);
+        });
+      } else lines.push('No open social positions');
+      if (s.closedToday && s.closedToday.length > 0) {
+        lines.push('');
+        lines.push('*Closed today:*');
+        s.closedToday.forEach(p => {
+          const sign = p.pnlUsd >= 0 ? '+' : '';
+          lines.push(`• ${p.symbol} ${sign}${p.pnlUsd.toFixed(2)} [${p.exitReason}]`);
+        });
+      }
+      reply(chatId, lines.join('\n'));
+    } catch(e) { reply(chatId, '📢 Social error: ' + e.message); }
+  }
+  else if (cmd === '/whale') {
+    try {
+      const { getWhaleStatus } = require('/Users/macpro/Desktop/peakseek/src/whale_watcher');
+      const st = getWhaleStatus();
+      const lines = [
+        `🐋 *Whale Watcher*`,
+        `Status: ${st.running ? '🟢 Running' : '🔴 Stopped'}`,
+        `Open: ${st.openPositions}/${st.maxPositions} positions`,
+      ];
+      if (st.positions && st.positions.length > 0) {
+        lines.push('');
+        st.positions.forEach(p => {
+          const pct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100).toFixed(1) : '0.0';
+          lines.push(`• ${p.symbol} +${pct}% [${p.chain}]`);
+        });
+      } else lines.push('No open whale positions');
+      reply(chatId, lines.join('\n'));
+    } catch(e) { reply(chatId, '🐋 Whale error: ' + e.message); }
+  }
+  else if (cmd === '/wallets') {
+    try {
+      const { getWalletFollowerStatus } = require('/Users/macpro/Desktop/peakseek/src/wallet_follower');
+      const s = getWalletFollowerStatus();
+      const lines = [
+        `👛 *Wallet Follower*`,
+        `Status: ${s.running ? '🟢 Running' : '🔴 Stopped'}`,
+        `Watching: ${s.trackedWallets} wallets`,
+        `Positions: ${s.openPositions}/${s.maxPositions}`,
+      ];
+      if (s.positions && s.positions.length > 0) {
+        lines.push('');
+        s.positions.forEach(p => {
+          const pct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100).toFixed(1) : '0.0';
+          lines.push(`• ${p.symbol} ${pct >= 0 ? '+' : ''}${pct}% [${p.source}]`);
+        });
+      } else {
+        lines.push('No open copy positions');
+      }
+      reply(chatId, lines.join('\n'));
+    } catch(e) { reply(chatId, '👛 Wallet Follower error: ' + e.message); }
+  }
+  else if (cmd === '/spot') {
+    try {
+      const { getSpotStatus } = require('/Users/macpro/Desktop/peakseek/src/spot');
+      const status = getSpotStatus();
+      const lines = [
+        `🪙 *Spot Trading*`,
+        `Status: ${status.running ? '🟢 Running' : '🔴 Stopped'}`,
+        `Open: ${status.openPositions || 0}/${status.config?.maxSpotPositions || 3} positions`,
+      ];
+      if (status.positions && status.positions.length > 0) {
+        lines.push('');
+        for (const p of status.positions) {
+          const rawPct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100) : 0; const pct = rawPct >= 0 ? `+${rawPct.toFixed(1)}%` : `${rawPct.toFixed(1)}%`;
+          lines.push(`• ${p.symbol} ${pct} [${p.chain}]`);
+        }
+      } else {
+        lines.push('No open spot positions');
+      }
+      if (status.closedToday && status.closedToday.length > 0) {
+        lines.push('');
+        lines.push('*Closed today:*');
+        for (const p of status.closedToday) {
+          const sign = p.pnlUsd >= 0 ? '+' : '';
+          lines.push(`• ${p.symbol} ${sign}${p.pnlUsd.toFixed(2)} [${p.exitReason}]`);
+        }
+      }
+      reply(chatId, lines.join('\n'));
+    } catch(e) {
+      reply(chatId, '🪙 Spot module: ' + e.message);
+    }
+    return;
+  }
+
+  const safeCmd = async () => {
+    if (cmd === '/signal') await handleSignal(chatId, parts);
+    else if (cmd === '/top') await handleTop(chatId, parts);
+    else if (cmd === '/portfolio') await handlePortfolio(chatId);
+    else if (cmd === '/paper') await handlePaper(chatId, parts);
+    else if (cmd === '/history') await handleHistory(chatId);
+    else if (cmd === '/wallet') await handleWallet(chatId, parts);
+    else if (cmd === '/mode') await handleMode(chatId, parts);
+    else if (cmd === '/chains') await handleChains(chatId, parts);
+    else if (cmd === '/trial') await handleTrial(chatId, parts);
+    else if (cmd === '/semi' || cmd === '/auto') await handleSemi(chatId, parts);
+    else if (cmd === '/bitget') await handleBitget(chatId, parts);
+    else if (cmd === '/dexscan') await handleDexscan(chatId, parts);
+    else if (cmd === '/dexpick') await handleDexpick(chatId, parts);
+    else if (cmd === '/positions') await handlePositions(chatId);
+    else if (cmd === '/live') await handleLive(chatId);
+    else if (cmd === '/lev') await handleLev(chatId, parts);
+    else if (cmd === '/autocore') await handleAutocore(chatId, parts);
+    else await handleOnboardingText(chatId, userId, normalized);
+  };
+  await safeCmd().catch(e => {
+    console.error(`[cmd] ${cmd} error:`, e.message);
+    reply(chatId, `⚠️ Error: ${e.message}`).catch(() => {});
+  });
 }
-} catch {}
+} catch(e) {
+  console.error('[poll] error:', e.message);
+  await new Promise(r => setTimeout(r, 5000)); // wait 5s then retry
+}
 }
 })();
+
+// v0.4 scheduler (paper unattended)
+setInterval(async () => {
+try {
+const { autoPolicy, portfolio } = require('./src/state');
+const { runAutoPickOnce } = require('./src/autopicker');
+if (!autoPolicy.enabled) return;
+if ((autoPolicy.mode || 'paper') !== 'paper') return;
+const open = (portfolio.positions || []).length;
+const maxOpen = Number(autoPolicy.maxOpen || 2);
+if (open >= maxOpen) return;
+await runAutoPickOnce(null, false);
+} catch {}
+}, 300000);
+
+// TODO: add /spot handler manually — see spot_patch.js

@@ -1,13 +1,11 @@
-const { portfolio } = require('./state');
+const { portfolio, autoPolicy, smartExit, persistNow } = require('./state');
 const { getBestPrice } = require('./prices');
 const { closePaperPosition } = require('./commands/paper');
 const { setLastAutoAction } = require('./commands/live');
 
 const runner = {
 enabled: false,
-symbols: ['BTC', 'ETH', 'SOL', 'ARB', 'BNB'],
-intervalMs: 20000,
-maxAutoMarginPerTrade: 10,
+intervalMs: 5000,
 loopHandle: null
 };
 
@@ -16,77 +14,107 @@ runner.enabled = !!v;
 }
 
 function getSemiStatus() {
-return {
-enabled: runner.enabled,
-symbols: runner.symbols,
-intervalMs: runner.intervalMs,
-maxAutoMarginPerTrade: runner.maxAutoMarginPerTrade
-};
+return { enabled: runner.enabled, intervalMs: runner.intervalMs };
 }
 
-async function checkAndClose(pos, price, chatIdForLogs, replyFn) {
-if (Number.isFinite(price)) {
-pos.highest = Math.max(pos.highest || price, price);
+function ageSec(pos) {
+return (Date.now() - Number(pos.openedAt || 0)) / 1000;
 }
 
-if (!pos.trailingOn && Number.isFinite(pos.trailingArm) && price >= pos.trailingArm) {
-pos.trailingOn = true;
-pos.trailingStop = (pos.highest || price) * 0.92;
-setLastAutoAction(`TRAIL_ARM ${pos.symbol}`);
-if (replyFn && chatIdForLogs) {
-await replyFn(chatIdForLogs, `🛡 Trailing armed for ${pos.symbol}`);
-}
-}
-
-if (pos.trailingOn) {
-const nextTrail = (pos.highest || price) * 0.92;
-if (!pos.trailingStop || nextTrail > pos.trailingStop) pos.trailingStop = nextTrail;
+function pnlPct(pos, price) {
+const entry = Number(pos.entry || 0);
+if (!entry) return 0;
+const side = String(pos.side || 'long').toLowerCase();
+const move = side === 'short' ? (entry - price) / entry : (price - entry) / entry;
+const lev = Number(pos.leverage || pos.lev || 3);
+return move * lev * 100;
 }
 
-if (Number.isFinite(pos.stop) && price <= pos.stop) {
-setLastAutoAction(`SL ${pos.symbol}`);
-await closePaperPosition(chatIdForLogs || pos.chatId || 0, pos.symbol, 'SL');
-return true;
-}
-
-if (pos.trailingOn && Number.isFinite(pos.trailingStop) && price <= pos.trailingStop) {
-setLastAutoAction(`TRAIL ${pos.symbol}`);
-await closePaperPosition(chatIdForLogs || pos.chatId || 0, pos.symbol, 'TRAIL');
-return true;
-}
-
-if (Number.isFinite(pos.tp2) && price >= pos.tp2) {
-setLastAutoAction(`TP2 ${pos.symbol}`);
-await closePaperPosition(chatIdForLogs || pos.chatId || 0, pos.symbol, 'TP2');
-return true;
-}
-
-if (Number.isFinite(pos.tp1) && price >= pos.tp1) {
-pos.trailingOn = true;
-const tighter = (pos.highest || price) * 0.95;
-if (!pos.trailingStop || tighter > pos.trailingStop) pos.trailingStop = tighter;
-setLastAutoAction(`TP1_TOUCH ${pos.symbol}`);
-}
-
-return false;
-}
-
-async function tickAutoExits(chatIdForLogs = null, replyFn = null) {
+async function tickAutoExits(chatIdForLogs = null) {
 if (!runner.enabled) return;
-if (!portfolio.positions.length) return;
+const rows = [...(portfolio.positions || [])];
+if (!rows.length) return;
 
-for (const p of [...portfolio.positions]) {
-const px = await getBestPrice(p.symbol);
+const cfg = {
+minHoldSec: Number(smartExit?.minHoldSec || 45),
+maxHoldSec: Number(smartExit?.maxHoldSec || 240),
+weakPnLPctCut: Number(smartExit?.weakPnLPctCut || -0.35),
+armTrailPnLPct: Number(smartExit?.armTrailPnLPct || 0.45),
+trailDrawdownPct: Number(smartExit?.trailDrawdownPct || 0.20)
+};
+
+for (const p of rows) {
+try {
+const px = await getBestPrice(p.symbol, {
+pairAddress: p.pairAddress || null,
+sourceLock: p.priceSource || null,
+strict: true,
+chainHint: p.chain || null
+});
+
 const price = Number(px?.price);
-if (!Number.isFinite(price)) continue;
-await checkAndClose(p, price, chatIdForLogs, replyFn);
+if (!Number.isFinite(price) || price <= 0) continue;
+
+const sec = ageSec(p);
+const pp = pnlPct(p, price);
+
+// hard SL / TP2 always respected
+if (p.stop != null && price <= Number(p.stop)) {
+setLastAutoAction(`SL ${p.symbol}`);
+await closePaperPosition(chatIdForLogs || p.chatId || 0, p.symbol, 'SL');
+continue;
+}
+if (p.tp2 != null && price >= Number(p.tp2)) {
+setLastAutoAction(`TP2 ${p.symbol}`);
+await closePaperPosition(chatIdForLogs || p.chatId || 0, p.symbol, 'TP2');
+continue;
+}
+
+// Smart Exit: only after minimum hold
+if (sec >= cfg.minHoldSec) {
+// weak trade cut earlier (reduce fat losses)
+if (pp <= cfg.weakPnLPctCut) {
+setLastAutoAction(`AI_CUT ${p.symbol}`);
+await closePaperPosition(chatIdForLogs || p.chatId || 0, p.symbol, 'AI_CUT');
+continue;
+}
+
+// arm trailing once enough positive edge
+if (!p.trailingOn && pp >= cfg.armTrailPnLPct) {
+p.trailingOn = true;
+p.highest = price;
+p.trailingStop = price * (1 - cfg.trailDrawdownPct / 100);
+setLastAutoAction(`AI_TRAIL_ARM ${p.symbol}`);
+}
+
+// update trailing
+if (p.trailingOn) {
+p.highest = Math.max(Number(p.highest || price), price);
+const nextStop = p.highest * (1 - cfg.trailDrawdownPct / 100);
+p.trailingStop = Math.max(Number(p.trailingStop || 0), nextStop);
+
+if (price <= Number(p.trailingStop || 0)) {
+setLastAutoAction(`TRAIL ${p.symbol}`);
+await closePaperPosition(chatIdForLogs || p.chatId || 0, p.symbol, 'TRAIL');
+continue;
+}
 }
 }
 
-function startSemiLoop(chatIdForLogs = null, replyFn = null) {
+// time fallback only at hard max hold
+if (sec >= cfg.maxHoldSec) {
+setLastAutoAction(`TIME_EXIT ${p.symbol}`);
+await closePaperPosition(chatIdForLogs || p.chatId || 0, p.symbol, 'TIME');
+continue;
+}
+} catch {}
+}
+}
+
+function startSemiLoop(chatIdForLogs = null) {
 if (runner.loopHandle) clearInterval(runner.loopHandle);
 runner.loopHandle = setInterval(() => {
-tickAutoExits(chatIdForLogs, replyFn).catch(() => {});
+tickAutoExits(chatIdForLogs).catch(() => {});
 }, runner.intervalMs);
 }
 

@@ -1,183 +1,156 @@
 const { reply } = require('../telegram');
-const { portfolio, risk, trial, getNextPosId } = require('../state');
-const { fmt, fmtAdaptive } = require('../indicators');
+const { persistNow } = require('../state');
+const { portfolio, settings, lossCooldown } = require('../state');
 const { getBestPrice } = require('../prices');
+const { fmtAdaptive } = require('../indicators');
+const { recordTrialClose } = require('./trial');
 
-async function openPaperPosition(chatId, side, symbol, lev, margin, plan = null) {
-const existing = portfolio.positions.find(p => p.symbol === symbol);
-if (existing) {
-await reply(chatId, `⚠️ ${symbol} already open (#${existing.id}, ${existing.side.toUpperCase()}).\nClose first: /paper close ${symbol}`);
+function n(v){ return Number(v || 0); }
+
+function findOpen(symbol) {
+return portfolio.positions.find(p => p.symbol === symbol);
+}
+
+function calcPnlUsd(pos, exitPrice) {
+const entry = n(pos.entry);
+const lev = n(pos.leverage || 1);
+const margin = n(pos.margin);
+if (!entry || !margin) return 0;
+
+const side = String(pos.side || 'long').toLowerCase();
+const move = side === 'short' ? (entry - exitPrice) / entry : (exitPrice - entry) / entry;
+return margin * lev * move;
+}
+
+async function openPaperPosition(chatId, side, symbol, leverage, margin, extras = {}) {
+const px = Number(extras.forcedEntry);
+const price = Number.isFinite(px) ? px : Number((await getBestPrice(symbol))?.price);
+
+if (!Number.isFinite(price) || price <= 0) {
+await reply(chatId, `No live price for ${symbol}.`);
+return false;
+}
+if (n(portfolio.balance) < n(margin)) {
+await reply(chatId, 'Insufficient paper balance.');
 return false;
 }
 
-if (portfolio.positions.length >= risk.maxOpen) {
-await reply(chatId, `Risk block: max open positions is ${risk.maxOpen}`);
-return false;
-}
-
-if (margin > portfolio.balance) {
-await reply(chatId, `Not enough balance. Available: $${fmt(portfolio.balance)}`);
-return false;
-}
-
-const px = await getBestPrice(symbol);
-if (!px || !Number.isFinite(px.price)) {
-await reply(chatId, `No price found for ${symbol} (HL+DEX lookup failed).`);
-return false;
-}
-
-portfolio.balance -= margin;
-portfolio.positions.push({
-id: getNextPosId(),
+const pos = {
+id: Date.now() + Math.floor(Math.random()*1000),
 chatId,
+openedAt: Date.now(),
+side: side || 'long',
 symbol,
-side,
-lev,
-margin,
-entry: px.price,
-priceSource: px.source,
-chain: px.chain || null,
-pairAddress: px.pairAddress || null,
-stop: plan?.stop ?? null,
-tp1: plan?.tp1 ?? null,
-tp2: plan?.tp2 ?? null,
-trailingArm: plan?.trailingArm ?? null,
+leverage: n(leverage || settings.leverage?.dex || 3),
+margin: n(margin),
+entry: n(price),
+stop: Number.isFinite(n(extras.stop)) ? n(extras.stop) : null,
+tp1: Number.isFinite(n(extras.tp1)) ? n(extras.tp1) : null,
+tp2: Number.isFinite(n(extras.tp2)) ? n(extras.tp2) : null,
+trailingArm: Number.isFinite(n(extras.trailingArm)) ? n(extras.trailingArm) : null,
 trailingOn: false,
 trailingStop: null,
-highest: px.price,
-openedAt: Date.now()
-});
-
-await reply(
-chatId,
-`✅ PAPER ${side.toUpperCase()} ${symbol}
-Lev: ${lev}x Margin: $${fmt(margin)}
-Entry: $${fmtAdaptive(px.price)}
-Source: ${px.source}${px.chain ? ` (${px.chain})` : ''}`
-);
-return true;
-}
-
-async function closePaperPosition(chatId, symbol, reason = null, silent = false) {
-const idx = portfolio.positions.findIndex(p => p.symbol === symbol);
-if (idx === -1) {
-if (chatId && !silent) await reply(chatId, `No open paper position for ${symbol}`);
-return false;
-}
-
-const pos = portfolio.positions[idx];
-const px = await getBestPrice(symbol);
-
-if (!px || !Number.isFinite(px.price)) {
-if (chatId && !silent) await reply(chatId, `No live price to close ${symbol} right now. Try again.`);
-return false;
-}
-
-const move = (px.price - pos.entry) / pos.entry;
-const signed = pos.side === 'long' ? move : -move;
-const pnl = pos.margin * pos.lev * signed;
-const roiPct = signed * 100 * pos.lev;
-
-portfolio.balance += pos.margin + pnl;
-portfolio.positions.splice(idx, 1);
-
-const closedTrade = {
-...pos,
-exit: px.price,
-exitSource: px.source,
-closeReason: reason || 'manual',
-pnl,
-roiPct,
-closedAt: Date.now()
+highest: n(price),
+priceSource: extras.forcedSource || 'DEX',
+chain: extras.forcedChain || null,
+pairAddress: extras.forcedPairAddress || null
 };
 
-portfolio.closed.unshift(closedTrade);
-if (portfolio.closed.length > 500) portfolio.closed.length = 500;
+portfolio.positions.push(pos);
+portfolio.balance = n(portfolio.balance) - n(margin);
+  persistNow();
 
-if (trial.active) {
-trial.trades += 1;
-trial.totalPnl += pnl;
-if (pnl >= 0) {
-trial.wins += 1;
-trial.grossWin += pnl;
-} else {
-trial.losses += 1;
-trial.grossLossAbs += Math.abs(pnl);
-}
-}
-
-if (chatId && !silent) {
 await reply(
 chatId,
-`✅ Closed ${symbol}${reason ? ` (${reason})` : ''}
+`✅ PAPER ${String(pos.side).toUpperCase()} ${symbol}
+Lev: ${pos.leverage}x Margin: $${fmtAdaptive(pos.margin)}
 Entry: $${fmtAdaptive(pos.entry)}
-Exit: $${fmtAdaptive(px.price)}
-PnL: $${fmtAdaptive(pnl)} (${fmtAdaptive(roiPct)}%)
-Balance: $${fmtAdaptive(portfolio.balance)}
-Exit source: ${px.source}`
+Source: ${pos.priceSource}${pos.chain ? ` (${pos.chain})` : ''}
+Pair: ${pos.pairAddress || 'n/a'}`
 );
-}
+
 return true;
 }
 
-async function closeAllPositions(chatId) {
-const syms = portfolio.positions.map(p => p.symbol);
-if (!syms.length) {
-await reply(chatId, 'No open positions to close.');
-return;
+async function closePaperPosition(chatId, symbol, reason = 'MANUAL') {
+const i = portfolio.positions.findIndex(p => p.symbol === symbol);
+if (i < 0) {
+if (chatId) await reply(chatId, `No open paper position for ${symbol}`);
+return false;
 }
 
-let closed = 0;
-for (const s of syms) {
-const ok = await closePaperPosition(chatId, s, 'manual-closeall', true);
-if (ok) closed += 1;
+const pos = portfolio.positions[i];
+const px = await getBestPrice(symbol, {
+pairAddress: pos.pairAddress || null,
+sourceLock: pos.priceSource || null,
+strict: true,
+chainHint: pos.chain || null
+});
+
+const exit = n(px?.price);
+if (!Number.isFinite(exit) || exit <= 0) {
+if (chatId) await reply(chatId, `No live price to close ${symbol} right now. Try again.`);
+return false;
 }
 
-await reply(chatId, `✅ Close-all complete.\nClosed: ${closed}\nOpen now: ${portfolio.positions.length}\nBalance: $${fmtAdaptive(portfolio.balance)}`);
+const pnl = calcPnlUsd(pos, exit);
+portfolio.positions.splice(i, 1);
+portfolio.balance = n(portfolio.balance) + n(pos.margin) + pnl;
+  persistNow();
+
+// unified accounting event
+recordTrialClose({
+ symbol: pos.symbol,
+ side: pos.side,
+ reason,
+ entry: pos.entry,
+ exit,
+ margin: pos.margin,
+ leverage: pos.leverage,
+ pnl
+ });
+
+ if (pnl < 0) {
+ const until = Date.now() + (Number(lossCooldown?.minutes || 30) * 60 * 1000);
+ if (pos.symbol) lossCooldown.bySymbol[String(pos.symbol).toUpperCase()] = until;
+ if (pos.pairAddress) lossCooldown.byPair[String(pos.pairAddress)] = until;
+ }
+
+if (chatId) {
+await reply(
+chatId,
+`📕 CLOSED ${pos.symbol} (${reason})
+Entry: $${fmtAdaptive(pos.entry)}
+Exit: $${fmtAdaptive(exit)}
+PnL: $${fmtAdaptive(pnl)}
+Balance: $${fmtAdaptive(portfolio.balance)}`
+);
+}
+
+return true;
 }
 
 async function handlePaper(chatId, parts) {
-if (parts.length < 2) {
-await reply(chatId, 'Usage:\n/paper long BTC 5 10\n/paper short ETH 3 20\n/paper close BTC\n/paper closeall');
+const sub = (parts[1] || '').toLowerCase();
+
+if (sub === 'closeall') {
+const symbols = [...new Set(portfolio.positions.map(p => p.symbol))];
+if (!symbols.length) {
+await reply(chatId, 'No open paper positions.');
+return;
+}
+for (const s of symbols) {
+await closePaperPosition(chatId, s, 'CLOSEALL');
+}
 return;
 }
 
-const action = (parts[1] || '').toLowerCase();
-if (action === 'closeall') {
-await closeAllPositions(chatId);
+if (sub === 'close' && parts[2]) {
+await closePaperPosition(chatId, parts[2].toUpperCase(), 'MANUAL');
 return;
 }
 
-if (action === 'close') {
-const symbol = (parts[2] || '').toUpperCase();
-if (!symbol) {
-await reply(chatId, 'Usage: /paper close <SYMBOL>');
-return;
-}
-await closePaperPosition(chatId, symbol, 'manual');
-return;
+await reply(chatId, 'Paper commands:\n• /paper close <SYMBOL>\n• /paper closeall');
 }
 
-if (parts.length !== 5) {
-await reply(chatId, 'Usage: /paper <long|short> <SYMBOL> <LEV> <MARGIN_USD>');
-return;
-}
-
-const side = action;
-const symbol = parts[2].toUpperCase();
-const lev = Number(parts[3]);
-const margin = Number(parts[4]);
-
-if (!['long', 'short'].includes(side)) {
-await reply(chatId, 'Side must be long or short.');
-return;
-}
-if (!Number.isFinite(lev) || !Number.isFinite(margin) || lev <= 0 || margin <= 0) {
-await reply(chatId, 'LEV and MARGIN must be positive numbers.');
-return;
-}
-
-await openPaperPosition(chatId, side, symbol, lev, margin);
-}
-
-module.exports = { handlePaper, openPaperPosition, closePaperPosition, closeAllPositions };
+module.exports = { handlePaper, openPaperPosition, closePaperPosition };
